@@ -24,10 +24,10 @@ const TEXT_FALLBACK_RAW = String(process.env.TEXT_MODEL_FALLBACK || '').trim() |
 const TEXT_FALLBACK = TEXT_FALLBACK_RAW === 'none' || TEXT_FALLBACK_RAW === TEXT_MODEL ? '' : TEXT_FALLBACK_RAW;
 const IMAGE_MODEL = String(process.env.IMAGE_MODEL || '').trim() || 'imagen-3.0-generate-002';
 const TTS_LIST = String(process.env.TTS_MODEL || 'gemini-2.5-flash-preview-tts').split(',').map(x => x.trim()).filter(Boolean);
-const TTS_MODEL = TTS_LIST[0];
 
 const VOICE = process.env.VOICE || 'Kore';
-const EXT = (process.env.EXT_PATH || '1').replace(/^\/+|\/+$/g, '');
+const EXT_RAW = String(process.env.EXT_PATH || '').replace(/^\/+|\/+$/g, '');
+const EXT = EXT_RAW || '1';
 const TOKEN = process.env.YEMOT_TOKEN ||
   (process.env.YEMOT_API_USERNAME && process.env.YEMOT_API_PASSWORD ? process.env.YEMOT_API_USERNAME + ':' + process.env.YEMOT_API_PASSWORD : '');
 
@@ -370,7 +370,7 @@ async function prepareRssRadio(args, s, deadline) {
   }
   if (!feedUrl) throw new Error('לא הוגדרו תחנות רדיו ב-RADIO_FEEDS');
 
-  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.2' } }, 12000, deadline);
+  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.3' } }, 12000, deadline);
   if (!r.ok) throw new Error('שגיאה בטעינת פיד RSS: ' + r.status);
   const xmlText = await r.text();
   const parsed = xmlParser.parse(xmlText);
@@ -716,11 +716,23 @@ async function ttsOne(text, deadline, o) {
 const EXTP = '/' + EXT;
 const yp = (name, d) => 'ivr2:' + (d === undefined ? EXTP : d) + '/' + name + (/\.[a-z0-9]+$/.test(name) ? '' : '.wav');
 
-async function download(name, deadline, d) {
+async function download(name, deadline, d, returnedPath, apiExt) {
+  const candidates = [];
+  if (returnedPath && /[a-z0-9_\/.-]+\.wav$/i.test(returnedPath)) {
+    const clean = returnedPath.replace(/^ivr2:/i, '');
+    candidates.push('ivr2:' + (clean.startsWith('/') ? '' : '/') + clean);
+  }
+  candidates.push(yp(name, d));
+  if (apiExt !== undefined && apiExt !== d) candidates.push(yp(name, apiExt));
+  if (d !== '') candidates.push(yp(name, ''));
+  const uniquePaths = [...new Set(candidates)];
+
   let last = '';
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
+    await sleep(i === 0 ? 450 : 650);
+    const targetPath = uniquePaths[i % uniquePaths.length];
     try {
-      const r = await http(YM + 'DownloadFile?token=' + encodeURIComponent(TOKEN) + '&path=' + encodeURIComponent(yp(name, d)), {}, 8000, deadline);
+      const r = await http(YM + 'DownloadFile?token=' + encodeURIComponent(TOKEN) + '&path=' + encodeURIComponent(targetPath), {}, 8000, deadline);
       const b = Buffer.from(await r.arrayBuffer());
       if (r.ok && b.length > 100 && b.subarray(0, 4).toString() === 'RIFF') return b;
       last = r.status + ' ' + b.subarray(0, 80).toString('utf8').replace(/\s+/g, ' ');
@@ -728,9 +740,8 @@ async function download(name, deadline, d) {
       if (isBudget(e)) throw e;
       last = e.message;
     }
-    await sleep(500);
   }
-  throw new Error('download failed ' + last);
+  throw new Error('download failed [' + uniquePaths.join(' | ') + '] Q=' + (returnedPath || '') + ' -> ' + last);
 }
 
 async function upload(name, buf, deadline, d, ms) {
@@ -760,7 +771,7 @@ async function upload(name, buf, deadline, d, ms) {
       if (ms && e.name === 'TimeoutError') break;
     }
   }
-  throw new Error('upload failed ' + last);
+  throw new Error('upload failed (' + path + ') ' + last);
 }
 
 function del(name, d) {
@@ -769,8 +780,12 @@ function del(name, d) {
 
 // --- ניהול שיחות ותפריטים בימות המשיח ---
 let CFG = [];
-try { CFG = JSON.parse(process.env.EXTENSIONS || '[]'); } catch (e) { CFG = []; }
+if (!EXT_RAW) {
+  try { CFG = JSON.parse(process.env.EXTENSIONS || '[]'); } catch (e) { CFG = []; }
+}
+const EXPLICIT_EXT = !!(EXT_RAW || (Array.isArray(CFG) && CFG.length > 0));
 if (!Array.isArray(CFG) || !CFG.length) CFG = [{ p: EXT, m: '2', x: '', g: process.env.GREETING || '' }];
+
 const DEFAULT_GREET = 'שלום וברכה, כאן הסוכן החכם';
 const EXTS = {};
 for (const c of CFG) {
@@ -788,6 +803,10 @@ const ERR = sp('הייתה תקלה נסו שוב');
 
 const idOf = q => String(q.ApiCallId || 'x').replace(/[^a-zA-Z0-9]/g, '').slice(-24) || 'x';
 const phoneOf = q => { const p = String(q.ApiPhone || '').replace(/\D/g, ''); return p.length >= 7 && p.length <= 15 ? p : ''; };
+const normApiExt = q => {
+  const raw = String(q.ApiExtension || '').trim().replace(/^\/+|\/+$/g, '');
+  return raw ? '/' + raw : '';
+};
 const newSession = (d, sys, g, extra) => Object.assign({ d, sys, g, n: 0, hn: 0, mode: '', job: null, vc: '', pace: '', len: '', h: [], p: '', name: '', r: '', t: 0, e: crypto.randomBytes(3).toString('hex'), statusQueue: [], routeAlternatives: [] }, extra || {});
 
 const EMPTY = 'None';
@@ -834,13 +853,14 @@ async function kbStep(s, q, id, T0) {
 }
 
 function runTurn(s, q, id, T0, typed) {
-  if (!typed && !q[s.p]) return tapAny(s, 't-' + AGAIN);
+  const recVal = typed ? '' : digitsOf(q[s.p]);
+  if (!typed && !recVal) return tapAny(s, 't-' + AGAIN);
   s.jobT0 = Date.now();
   s.statusQueue = [sp('קיבלתי רגע אחד')];
   s.extraPlayChain = '';
   s.transferToExt = '';
   s.awaitingRouteChoice = false;
-  s.job = doTurn(s, q, id, s.jobT0, typed).catch(e => {
+  s.job = doTurn(s, q, id, s.jobT0, typed, recVal).catch(e => {
     console.error(id, 'turn crashed', e && e.message);
     return tapAny(s, 't-' + ERR);
   });
@@ -890,7 +910,7 @@ async function speakAndReturn(s, text, deadline, useRouteMenu) {
   return builder(s, 'f-' + s.d + '/' + rn + tail);
 }
 
-async function doTurn(s, q, id, T0, typed) {
+async function doTurn(s, q, id, T0, typed, recVal) {
   const deadline = T0 + BUDGET;
   const qn = s.name;
   try {
@@ -901,7 +921,7 @@ async function doTurn(s, q, id, T0, typed) {
       else if ((m = LONG_RE.exec(tq))) { s.len = ''; tq = tq.slice(m[0].length).trim() || 'אשר בהרחבה'; }
       userPart = { text: 'הבקשה הוקלדה במקשי הטלפון: ' + tq };
     } else {
-      const audio = await download(qn, deadline, s.d);
+      const audio = await download(qn, deadline, s.d, recVal, s.apiExt);
       del(qn, s.d);
       userPart = { inlineData: { mimeType: 'audio/wav', data: audio.toString('base64') } };
     }
@@ -984,6 +1004,8 @@ app.all(['/yemot', '/yemot/:e'], async (req, res) => {
   res.type('text/plain');
   const T0 = Date.now();
   const ext = EXTS[String(req.params.e || '')] || EXT_FIRST;
+  const apiExt = normApiExt(q);
+  const targetDir = (EXPLICIT_EXT || req.params.e) ? ext.d : (apiExt || ext.d);
   try {
     if (q.hangup === 'yes') {
       const old = calls[id];
@@ -991,7 +1013,7 @@ app.all(['/yemot', '/yemot/:e'], async (req, res) => {
       delete calls[id];
       return res.send('noop=bye');
     }
-    const s = calls[id] || (calls[id] = newSession(ext.d, ext.sys, ext.g, { ph: phoneOf(q) }));
+    const s = calls[id] || (calls[id] = newSession(targetDir, ext.sys, ext.g, { ph: phoneOf(q), apiExt }));
     s.t = Date.now();
     if (!s.mode) return res.send(tapAny(s, 't-' + s.g, MENU_OPEN));
     const out = await turnStep(s, q, id, T0);
