@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: kav-ai-agentic
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TEXT_MODEL
+        value: "gemini-2.5-flash"
+      - key: TEXT_MODEL_FALLBACK
+        value: "gemini-2.5-flash-lite"
+      - key: IMAGE_MODEL
+        value: "imagen-3.0-generate-002"
+      - key: TTS_MODEL
+        value: "gemini-2.5-flash-preview-tts"
+      - key: MAX_WORDS
+        value: "700"
+      - key: HISTORY_EXT
+        value: "9"
+      - key: GEMINI_API_KEYS
+        sync: false
+      - key: GEMINI_TTS_KEYS
+        sync: false
+      - key: GROQ_API_KEYS
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: YEMOT_TOKEN
+        sync: false
+      - key: TARGET_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        value: "smtp.gmail.com"
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: RADIO_FEEDS
+        sync: false
