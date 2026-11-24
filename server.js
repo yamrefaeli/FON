@@ -6,6 +6,10 @@ const path = require('path');
 const execFileP = require('util').promisify(require('child_process').execFile);
 const { XMLParser } = require('fast-xml-parser');
 
+// סגירה מיידית בעת פריסה חדשה ב-Render כדי למנוע תקיעה במצב Deploying
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
+
 const FFMPEG = process.env.FFMPEG_PATH || (() => { try { return require('ffmpeg-static'); } catch (e) { return null; } })();
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -22,12 +26,11 @@ const GROQ_MODEL = process.env.GROQ_SEARCH_MODEL || 'openai/gpt-oss-120b';
 const TEXT_MODEL = String(process.env.TEXT_MODEL || '').trim() || 'gemini-2.5-flash';
 const TEXT_FALLBACK_RAW = String(process.env.TEXT_MODEL_FALLBACK || '').trim() || 'gemini-2.5-flash-lite';
 const TEXT_FALLBACK = TEXT_FALLBACK_RAW === 'none' || TEXT_FALLBACK_RAW === TEXT_MODEL ? '' : TEXT_FALLBACK_RAW;
-const IMAGE_MODEL = String(process.env.IMAGE_MODEL || '').trim() || 'imagen-3.0-generate-002';
+const IMAGE_MODEL = String(process.env.IMAGE_MODEL || '').trim() || 'imagen-3.0-fast-generate-001';
 const TTS_LIST = String(process.env.TTS_MODEL || 'gemini-2.5-flash-preview-tts').split(',').map(x => x.trim()).filter(Boolean);
 
 const VOICE = process.env.VOICE || 'Kore';
-const EXT_RAW = String(process.env.EXT_PATH || '').replace(/^\/+|\/+$/g, '');
-const EXT = EXT_RAW || '1';
+const EXT = (process.env.EXT_PATH || '1').replace(/^\/+|\/+$/g, '') || '1';
 const TOKEN = process.env.YEMOT_TOKEN ||
   (process.env.YEMOT_API_USERNAME && process.env.YEMOT_API_PASSWORD ? process.env.YEMOT_API_USERNAME + ':' + process.env.YEMOT_API_PASSWORD : '');
 
@@ -44,6 +47,9 @@ const GAS_MAIL_SECRET = String(process.env.GAS_MAIL_SECRET || 'kav-ai-secret-202
 async function sendViaGasEmail({ subject, body, files }, deadline) {
   if (!GAS_MAIL_URL || !TARGET_EMAIL) {
     throw new Error('חסרה הגדרת GAS_MAIL_URL או TARGET_EMAIL בשרת');
+  }
+  if (GAS_MAIL_URL.includes('/macros/library/')) {
+    throw new Error('כתובת GAS_MAIL_URL היא כתובת ספרייה ולא כתובת Web App (/macros/s/.../exec)');
   }
   const r = await http(GAS_MAIL_URL, {
     method: 'POST',
@@ -66,10 +72,24 @@ async function sendViaGasEmail({ subject, body, files }, deadline) {
   return true;
 }
 
-// --- הגדרות רדיו RSS ושידור חי ---
+// --- הגדרות רדיו RSS ושידור חי (כולל ניקוי אוטומטי של פורמט קישורים) ---
 let RADIO_FEEDS = [];
-try { RADIO_FEEDS = JSON.parse(process.env.RADIO_FEEDS || '[]'); } catch (e) { RADIO_FEEDS = []; }
-RADIO_FEEDS = (Array.isArray(RADIO_FEEDS) ? RADIO_FEEDS : []).filter(f => f && f.n && /^https?:\/\//i.test(f.u));
+try {
+  const rawFeeds = String(process.env.RADIO_FEEDS || '[]').trim().replace(/^'+|'+$/g, '');
+  RADIO_FEEDS = JSON.parse(rawFeeds);
+} catch (e) {
+  RADIO_FEEDS = [];
+}
+RADIO_FEEDS = (Array.isArray(RADIO_FEEDS) ? RADIO_FEEDS : [])
+  .map(f => {
+    if (!f || !f.n) return null;
+    let u = String(f.u || '').trim();
+    const mdMatch = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/.exec(u);
+    if (mdMatch) u = mdMatch[2];
+    return /^https?:\/\//i.test(u) ? { n: String(f.n).trim(), u } : null;
+  })
+  .filter(Boolean);
+
 const LIVE_STREAM_EXT = String(process.env.LIVE_STREAM_EXT || '').replace(/^\/+|\/+$/g, '');
 
 // --- פונקציות עזר ---
@@ -103,7 +123,7 @@ function pushStatus(s, text) {
 // --- הנחיית המערכת הסוכנותית ---
 const VOICE_CTL = ' אם המשתמש מבקש לשנות את הקול, את קצב הדיבור או את אורך התשובות, התחל את התשובה בתג מתאים ואחריו אשר בקצרה: [[VOICE:male]] לקול גברי, [[VOICE:female]] לקול נשי, [[VOICE:default]] לקול רגיל, [[PACE:slow]] לאט, [[PACE:fast]] מהר, [[PACE:normal]] רגיל, [[LEN:short]] לתשובות קצרות, [[LEN:long]] לתשובות מפורטות.';
 const TRANSCRIBE_HINT = ' אם השאלה הגיעה כהקלטה קולית, התחל את התשובה בתג [[Q:תמלול מדויק של השאלה במילים]] ואחריו התשובה עצמה.';
-const MAXW = Math.min(1000, Math.max(500, parseInt(process.env.MAX_WORDS, 10) || 700));
+const MAXW = Math.min(3000, Math.max(200, parseInt(process.env.MAX_WORDS, 10) || 700));
 const EXTRA = String(process.env.EXTRA_INSTRUCTION || '').replace(/\s+/g, ' ').trim().slice(0, 2000);
 
 const AGENTIC_RULES = `
@@ -370,7 +390,7 @@ async function prepareRssRadio(args, s, deadline) {
   }
   if (!feedUrl) throw new Error('לא הוגדרו תחנות רדיו ב-RADIO_FEEDS');
 
-  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.3' } }, 12000, deadline);
+  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.4' } }, 12000, deadline);
   if (!r.ok) throw new Error('שגיאה בטעינת פיד RSS: ' + r.status);
   const xmlText = await r.text();
   const parsed = xmlParser.parse(xmlText);
@@ -728,7 +748,7 @@ async function download(name, deadline, d, returnedPath, apiExt) {
   const uniquePaths = [...new Set(candidates)];
 
   let last = '';
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
     await sleep(i === 0 ? 450 : 650);
     const targetPath = uniquePaths[i % uniquePaths.length];
     try {
@@ -780,10 +800,7 @@ function del(name, d) {
 
 // --- ניהול שיחות ותפריטים בימות המשיח ---
 let CFG = [];
-if (!EXT_RAW) {
-  try { CFG = JSON.parse(process.env.EXTENSIONS || '[]'); } catch (e) { CFG = []; }
-}
-const EXPLICIT_EXT = !!(EXT_RAW || (Array.isArray(CFG) && CFG.length > 0));
+try { CFG = JSON.parse(process.env.EXTENSIONS || '[]'); } catch (e) { CFG = []; }
 if (!Array.isArray(CFG) || !CFG.length) CFG = [{ p: EXT, m: '2', x: '', g: process.env.GREETING || '' }];
 
 const DEFAULT_GREET = 'שלום וברכה, כאן הסוכן החכם';
@@ -804,7 +821,8 @@ const ERR = sp('הייתה תקלה נסו שוב');
 const idOf = q => String(q.ApiCallId || 'x').replace(/[^a-zA-Z0-9]/g, '').slice(-24) || 'x';
 const phoneOf = q => { const p = String(q.ApiPhone || '').replace(/\D/g, ''); return p.length >= 7 && p.length <= 15 ? p : ''; };
 const normApiExt = q => {
-  const raw = String(q.ApiExtension || '').trim().replace(/^\/+|\/+$/g, '');
+  if (q.ApiExtension === undefined || q.ApiExtension === null) return null;
+  const raw = String(q.ApiExtension).trim().replace(/^\/+|\/+$/g, '');
   return raw ? '/' + raw : '';
 };
 const newSession = (d, sys, g, extra) => Object.assign({ d, sys, g, n: 0, hn: 0, mode: '', job: null, vc: '', pace: '', len: '', h: [], p: '', name: '', r: '', t: 0, e: crypto.randomBytes(3).toString('hex'), statusQueue: [], routeAlternatives: [] }, extra || {});
@@ -1005,7 +1023,8 @@ app.all(['/yemot', '/yemot/:e'], async (req, res) => {
   const T0 = Date.now();
   const ext = EXTS[String(req.params.e || '')] || EXT_FIRST;
   const apiExt = normApiExt(q);
-  const targetDir = (EXPLICIT_EXT || req.params.e) ? ext.d : (apiExt || ext.d);
+  // שימוש אוטומטי בשלוחה האמיתית שמגיעה מימות המשיח (ApiExtension)
+  const targetDir = req.params.e ? ext.d : (apiExt !== null ? apiExt : ext.d);
   try {
     if (q.hangup === 'yes') {
       const old = calls[id];
