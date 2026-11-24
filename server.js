@@ -36,7 +36,7 @@ const GBASE = process.env.GEMINI_BASE || 'https://generativelanguage.googleapis.
 const BUDGET = Number(process.env.TURN_BUDGET_MS) || 85000;
 const REC_MAX = String(parseInt(process.env.REC_MAX, 10) || 30);
 
-// --- הגדרות Google Apps Script לשליחת מייל ---
+// --- שליחת מייל דרך Google Apps Script ---
 const TARGET_EMAIL = String(process.env.TARGET_EMAIL || '').trim();
 const GAS_MAIL_URL = String(process.env.GAS_MAIL_URL || '').trim();
 const GAS_MAIL_SECRET = String(process.env.GAS_MAIL_SECRET || 'kav-ai-secret-2026').trim();
@@ -100,7 +100,7 @@ function pushStatus(s, text) {
   if (s.onStatus) { const fn = s.onStatus; s.onStatus = null; fn(); }
 }
 
-// --- הנחיית המערכת הסוכנותית (נקייה מהגבלות דת מחמירות) ---
+// --- הנחיית המערכת הסוכנותית ---
 const VOICE_CTL = ' אם המשתמש מבקש לשנות את הקול, את קצב הדיבור או את אורך התשובות, התחל את התשובה בתג מתאים ואחריו אשר בקצרה: [[VOICE:male]] לקול גברי, [[VOICE:female]] לקול נשי, [[VOICE:default]] לקול רגיל, [[PACE:slow]] לאט, [[PACE:fast]] מהר, [[PACE:normal]] רגיל, [[LEN:short]] לתשובות קצרות, [[LEN:long]] לתשובות מפורטות.';
 const TRANSCRIBE_HINT = ' אם השאלה הגיעה כהקלטה קולית, התחל את התשובה בתג [[Q:תמלול מדויק של השאלה במילים]] ואחריו התשובה עצמה.';
 const MAXW = Math.min(1000, Math.max(500, parseInt(process.env.MAX_WORDS, 10) || 700));
@@ -109,13 +109,13 @@ const EXTRA = String(process.env.EXTRA_INSTRUCTION || '').replace(/\s+/g, ' ').t
 const AGENTIC_RULES = `
 אתה סוכן בינה מלאכותית קולי חכם, יעיל, אדיב ומדויק בטלפון.
 עקרון עבודה סוכנותי:
-1. לפני כל הפעלת כלי (Tool), עליך להעביר בשדה action_announcement משפט קצר וברור בעברית שמסביר למתקשר מה אתה הולך לעשות כעת (לדוגמה: "אני בודק כעת את מסלול התחבורה הציבורית בגוגל מפות", "אני מבצע כעת חיפוש מעמיק במספר מקורות ברשת", "אני מייצר כעת את התמונה ושולח אותה למייל שלך").
-2. ניווט ותחבורה ציבורית (google_maps_route): כאשר מבקשים מסלול הגעה, הפעל את הכלי עם מוצא ויעד מדויקים. לאחר קבלת הנתונים, נסח תשובה קולית ברורה, נעימה ומסודרת כרונולוגית הכוללת את כל הפרטים ללא דילוגים: נקודת היציאה, שם תחנת העלייה ומספר התחנה, מספר הקו והמפעיל, שעת יציאה מדויקת, כמה תחנות נוסעים, באיזו תחנה יורדים ובאיזו שעה, ואם יש המשך הליכה או החלפה — לאן ללכת, באילו רחובות לפנות ומה המרחק.
+1. לפני כל הפעלת כלי (Tool), עליך להעביר בשדה action_announcement משפט קצר וברור בעברית שמסביר למתקשר מה אתה הולך לעשות כעת (לדוגמה: "אני בודק כעת שלוש חלופות מסלול בגוגל מפות", "אני מבצע כעת חיפוש מעמיק במספר מקורות ברשת", "אני מייצר כעת את התמונה ושולח אותה למייל שלך").
+2. ניווט ותחבורה ציבורית (google_maps_route): כאשר מבקשים מסלול הגעה, הפעל את הכלי עם מוצא ויעד מדויקים. הכלי שומר אוטומטית עד 3 חלופות מסלול. לאחר שהכלי חוזר, אל תקריא את המסלולים המלאים! במקום זאת, תן תקציר של משפט אחד לכל חלופה (איזה קו וזמן כולל) וסיים במשפט: "הבאתי שלוש חלופות, הקש 1 לשמיעת החלופה הראשונה, 2 לשנייה, או 3 לשלישית".
 3. חיפוש ברשת (web_search_parallel): כאשר נדרש מידע עדכני, חדשות, בדיקת עובדות או מחקר, הפעל את כלי החיפוש המקבילי עם מערך של 5 עד 8 שאילתות חיפוש שונות וממוקדות שירוצו בו זמנית כדי לכסות את הנושא מכל הזוויות. מזג את כל התוצאות לתשובה אחת קוהרנטית ומלאה בלי להקריא כתובות אינטרנט.
-4. רדיו וחדשות RSS (play_rss_radio): כאשר מבקשים לשמוע רדיו, חדשות או שידור רציף מפיד RSS, הפעל את הכלי. אם המשתמש ביקש שידור חי רציף (stream) והוגדרה שלוחת שידור חי, ציין mode="live".
+4. רדיו וחדשות RSS (play_rss_radio): כאשר מבקשים לשמוע רדיו, חדשות או שידור מפיד RSS, הפעל את הכלי. אם המשתמש ביקש שידור חי רציף (stream) והוגדרה שלוחת שידור חי, ציין mode="live".
 5. יצירת תמונות (generate_image): כאשר מבקשים לייצר תמונה, הבן מהבקשה את התיאור המפורט (באנגלית עבור המנוע), את הגודל/יחס הגובה-רוחב (ריבוע 1:1, לרוחב 16:9, לאורך 9:16) ואת כמות התמונות (1 עד 4). הפעל את הכלי שישלח אותן אוטומטית למייל דרך סקריפט גוגל.
 6. יצירת אודיו (generate_audio): כאשר מבקשים לייצר קטע שמע, קריינות או הקלטה, הפעל את הכלי וקבע האם להשמיע אותו כאן בשיחה, לשלוח למייל, או שניהם.
-7. סגנון דיבור: ענה בעברית טבעית, שוטפת ונעימה להאזנה בטלפון, ללא סימנים מיוחדים, כוכביות או קישורים, באורך של עד ${MAXW} מילים (אלא אם התבקשת לקצר).
+7. סגנון דיבור: ענה בעברית טבעית, שוטפת ונעימה להאזנה בטלפון, ללא סימנים מיוחדים, כוכביות או קישורים, באורך של עד ${MAXW} מילים.
 `.replace(/\s+/g, ' ').trim();
 
 const buildSys = (mode, extra) => AGENTIC_RULES + ' ' +
@@ -181,15 +181,15 @@ async function textGen(body, deadline) {
 }
 
 // ============================================================================
-// כלי 1: ניווט מדויק בגוגל מפות
+// כלי 1: ניווט מדויק בגוגל מפות (3 חלופות מסלול עם בחירה ב-1/2/3)
 // ============================================================================
 const MAPS_DECL = {
   name: 'google_maps_route',
-  description: 'Get exact public transit and walking directions from Google Maps including stop names, stop codes/numbers, line numbers, departure/arrival times, number of stops, and street-by-street walking instructions.',
+  description: 'Get up to 3 alternative public transit and walking routes from Google Maps including stop names, stop codes/numbers, line numbers, departure/arrival times, number of stops, and street-by-street walking instructions.',
   parameters: {
     type: 'OBJECT',
     properties: {
-      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are checking Google Maps right now' },
+      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are checking 3 route alternatives on Google Maps' },
       origin: { type: 'STRING', description: 'Starting address, station, or landmark in Israel' },
       destination: { type: 'STRING', description: 'Destination address, station, or landmark in Israel' },
       mode: { type: 'STRING', description: 'transit (default), walking, or driving' },
@@ -201,12 +201,48 @@ const MAPS_DECL = {
 
 const stripHtml = h => String(h || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-async function runGoogleMapsRoute(args, deadline) {
+function formatRouteSpeech(route, index) {
+  const leg = route.legs[0];
+  const lines = [];
+  lines.push(`חלופה מספר ${index + 1}: יציאה מ${leg.start_address}, משך נסיעה כולל ${leg.duration ? leg.duration.text : ''}, הגעה משוערת בשעה ${leg.arrival_time ? leg.arrival_time.text : ''}.`);
+
+  for (const st of (leg.steps || [])) {
+    if (st.travel_mode === 'TRANSIT' && st.transit_details) {
+      const td = st.transit_details;
+      const line = td.line || {};
+      const agency = (line.agencies && line.agencies[0]) ? `של חברת ${line.agencies[0].name}` : '';
+      const lineNum = line.short_name || line.name || '';
+      const depStop = td.departure_stop ? td.departure_stop.name : '';
+      const depCode = (td.departure_stop && td.departure_stop.stop_code) ? `, מספר תחנה ${td.departure_stop.stop_code}` : '';
+      const depTime = td.departure_time ? td.departure_time.text : '';
+      const arrStop = td.arrival_stop ? td.arrival_stop.name : '';
+      const arrCode = (td.arrival_stop && td.arrival_stop.stop_code) ? `, מספר תחנה ${td.arrival_stop.stop_code}` : '';
+      const arrTime = td.arrival_time ? td.arrival_time.text : '';
+      const stopsCount = td.num_stops || 0;
+
+      lines.push(`עולים בתחנת ${depStop}${depCode}, על קו ${lineNum} ${agency} לכיוון ${td.headsign || ''}, בשעה ${depTime}. נוסעים ${stopsCount} תחנות, ויורדים בתחנת ${arrStop}${arrCode} בשעה ${arrTime}.`);
+    } else if (st.travel_mode === 'WALKING') {
+      const mainWalk = stripHtml(st.html_instructions);
+      const dist = st.distance ? st.distance.text : '';
+      let subDetails = '';
+      if (st.steps && Array.isArray(st.steps) && st.steps.length > 1) {
+        subDetails = ' פירוט הרחובות: ' + st.steps.map(sub => `${stripHtml(sub.html_instructions)} (${sub.distance ? sub.distance.text : ''})`).join(', ') + '.';
+      }
+      lines.push(`הליכה רגלית של ${dist}: ${mainWalk}.${subDetails}`);
+    } else {
+      lines.push(`${stripHtml(st.html_instructions)} (${st.distance ? st.distance.text : ''}).`);
+    }
+  }
+  return lines.join(' ');
+}
+
+async function runGoogleMapsRoute(args, s, deadline) {
   if (!MAPS_KEY) return { error: 'GOOGLE_MAPS_API_KEY is not configured on the server' };
   const u = new URL('https://maps.googleapis.com/maps/api/directions/json');
   u.searchParams.set('origin', args.origin);
   u.searchParams.set('destination', args.destination);
   u.searchParams.set('mode', args.mode || 'transit');
+  u.searchParams.set('alternatives', 'true');
   u.searchParams.set('language', 'he');
   u.searchParams.set('region', 'il');
   u.searchParams.set('departure_time', args.departure_time || 'now');
@@ -218,51 +254,28 @@ async function runGoogleMapsRoute(args, deadline) {
     return { error: 'לא נמצא מסלול מתאים בגוגל מפות: ' + (j.status || 'UNKNOWN') };
   }
 
-  const leg = j.routes[0].legs[0];
-  const stepsSummary = (leg.steps || []).map((st, idx) => {
-    const base = {
-      step_number: idx + 1,
-      travel_mode: st.travel_mode,
-      instruction: stripHtml(st.html_instructions),
-      distance: st.distance ? st.distance.text : '',
-      duration: st.duration ? st.duration.text : ''
+  const top3 = j.routes.slice(0, 3);
+  s.routeAlternatives = top3.map((rt, idx) => formatRouteSpeech(rt, idx));
+  s.awaitingRouteChoice = true;
+
+  const briefList = top3.map((rt, idx) => {
+    const leg = rt.legs[0];
+    const transitLines = (leg.steps || [])
+      .filter(st => st.travel_mode === 'TRANSIT' && st.transit_details)
+      .map(st => st.transit_details.line.short_name || st.transit_details.line.name)
+      .join(' ואז קו ');
+    return {
+      option: idx + 1,
+      duration: leg.duration ? leg.duration.text : '',
+      lines: transitLines || 'הליכה / רכב',
+      arrival: leg.arrival_time ? leg.arrival_time.text : ''
     };
-    if (st.travel_mode === 'TRANSIT' && st.transit_details) {
-      const td = st.transit_details;
-      const line = td.line || {};
-      const agency = (line.agencies && line.agencies[0]) ? line.agencies[0].name : '';
-      base.transit = {
-        line_number: line.short_name || line.name || '',
-        line_name: line.name || '',
-        agency,
-        vehicle_type: line.vehicle ? line.vehicle.name : '',
-        departure_stop_name: td.departure_stop ? td.departure_stop.name : '',
-        departure_stop_code: td.departure_stop ? (td.departure_stop.stop_code || 'לא צוין קוד תחנה') : '',
-        departure_time: td.departure_time ? td.departure_time.text : '',
-        arrival_stop_name: td.arrival_stop ? td.arrival_stop.name : '',
-        arrival_stop_code: td.arrival_stop ? (td.arrival_stop.stop_code || 'לא צוין קוד תחנה') : '',
-        arrival_time: td.arrival_time ? td.arrival_time.text : '',
-        num_stops: td.num_stops || 0,
-        headsign: td.headsign || ''
-      };
-    }
-    if (st.steps && Array.isArray(st.steps)) {
-      base.sub_walking_steps = st.steps.map(sub => ({
-        instruction: stripHtml(sub.html_instructions),
-        distance: sub.distance ? sub.distance.text : ''
-      }));
-    }
-    return base;
   });
 
   return {
-    start_address: leg.start_address,
-    end_address: leg.end_address,
-    total_distance: leg.distance ? leg.distance.text : '',
-    total_duration: leg.duration ? leg.duration.text : '',
-    departure_time: leg.departure_time ? leg.departure_time.text : '',
-    arrival_time: leg.arrival_time ? leg.arrival_time.text : '',
-    steps: stepsSummary
+    total_alternatives: top3.length,
+    brief_summary: briefList,
+    instruction_to_model: `Present a very short 1-line summary of each of the ${top3.length} alternatives and ask the caller to press 1, 2, or 3 to hear the full step-by-step route.`
   };
 }
 
@@ -357,7 +370,7 @@ async function prepareRssRadio(args, s, deadline) {
   }
   if (!feedUrl) throw new Error('לא הוגדרו תחנות רדיו ב-RADIO_FEEDS');
 
-  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.1' } }, 12000, deadline);
+  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.2' } }, 12000, deadline);
   if (!r.ok) throw new Error('שגיאה בטעינת פיד RSS: ' + r.status);
   const xmlText = await r.text();
   const parsed = xmlParser.parse(xmlText);
@@ -553,7 +566,7 @@ async function askModel(sys, contents, deadline, s) {
       let out;
       try {
         if (fname === 'google_maps_route') {
-          out = await runGoogleMapsRoute(args, deadline);
+          out = await runGoogleMapsRoute(args, s, deadline);
         } else if (fname === 'web_search_parallel') {
           out = await runParallelGroqSearch(args.queries, deadline);
         } else if (fname === 'play_rss_radio') {
@@ -775,7 +788,7 @@ const ERR = sp('הייתה תקלה נסו שוב');
 
 const idOf = q => String(q.ApiCallId || 'x').replace(/[^a-zA-Z0-9]/g, '').slice(-24) || 'x';
 const phoneOf = q => { const p = String(q.ApiPhone || '').replace(/\D/g, ''); return p.length >= 7 && p.length <= 15 ? p : ''; };
-const newSession = (d, sys, g, extra) => Object.assign({ d, sys, g, n: 0, hn: 0, mode: '', job: null, vc: '', pace: '', len: '', h: [], p: '', name: '', r: '', t: 0, e: crypto.randomBytes(3).toString('hex'), statusQueue: [] }, extra || {});
+const newSession = (d, sys, g, extra) => Object.assign({ d, sys, g, n: 0, hn: 0, mode: '', job: null, vc: '', pace: '', len: '', h: [], p: '', name: '', r: '', t: 0, e: crypto.randomBytes(3).toString('hex'), statusQueue: [], routeAlternatives: [] }, extra || {});
 
 const EMPTY = 'None';
 const TAP_EMPTY = ',No,no,no,,,,Ok,' + EMPTY;
@@ -794,6 +807,7 @@ const kbFinal = t => t.replace(/(?<=[א-ת])[כמנפצ](?=\s|$)/g, c => KB_FINA
 const askFor = (s, pre) => { s.n++; s.mode = 'rec'; s.p = 'Q' + s.e + s.n; s.name = 'q' + s.e + 'n' + s.n; return 'read=' + pre + '=' + s.p + ',no,record,' + s.d + ',' + s.name + ',no,,,1,' + REC_MAX; };
 const tapAny = (s, pre, menu) => { s.n++; s.mode = 'menu'; s.p = 'K' + s.e + s.n; return 'read=' + pre + '.t-' + (menu || MENU) + '=' + s.p + ',no,1,1,' + WAIT_SEC + TAP_EMPTY; };
 const ansFor = (s, pre) => { s.n++; s.mode = 'ans'; s.p = 'A' + s.e + s.n; return 'read=' + pre + '=' + s.p + ',no,1,1,1' + TAP_EMPTY; };
+const routeChoiceFor = (s, pre) => { s.n++; s.mode = 'route_choice'; s.p = 'R' + s.e + s.n; return 'read=' + pre + '=' + s.p + ',no,1,1,10' + TAP_EMPTY; };
 const kbAsk = (s, pre) => { s.n++; s.mode = 'type'; s.p = 'K' + s.e + s.n; return 'read=' + pre + '=' + s.p + ',no,*,1,' + KB_WAIT + TAP_EMPTY; };
 
 function kbKey(s, raw) {
@@ -825,6 +839,7 @@ function runTurn(s, q, id, T0, typed) {
   s.statusQueue = [sp('קיבלתי רגע אחד')];
   s.extraPlayChain = '';
   s.transferToExt = '';
+  s.awaitingRouteChoice = false;
   s.job = doTurn(s, q, id, s.jobT0, typed).catch(e => {
     console.error(id, 'turn crashed', e && e.message);
     return tapAny(s, 't-' + ERR);
@@ -860,6 +875,21 @@ async function holdStep(s) {
   return 'read=t-' + sp('עוד רגע') + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
 }
 
+async function speakAndReturn(s, text, deadline, useRouteMenu) {
+  let pcm = null;
+  try { pcm = await tts(text, deadline, { voice: VOICE_BY[s.vc], pace: s.pace }); } catch (te) {}
+  const tail = s.extraPlayChain ? '.' + s.extraPlayChain : '';
+  s.extraPlayChain = '';
+  const builder = useRouteMenu ? routeChoiceFor : ansFor;
+
+  if (!pcm) return builder(s, 't-' + (sp(text) || ERR) + tail);
+
+  const rn = 'r' + s.e + 'n' + s.n;
+  await upload(rn, pcm, deadline, s.d, 30000);
+  s.r = rn;
+  return builder(s, 'f-' + s.d + '/' + rn + tail);
+}
+
 async function doTurn(s, q, id, T0, typed) {
   const deadline = T0 + BUDGET;
   const qn = s.name;
@@ -884,7 +914,6 @@ async function doTurn(s, q, id, T0, typed) {
       s
     );
 
-    // אם התבקש מעבר לשלוחת שידור חי (type=stream) בימות המשיח
     if (s.transferToExt) {
       const target = s.transferToExt;
       s.transferToExt = '';
@@ -908,18 +937,8 @@ async function doTurn(s, q, id, T0, typed) {
     s.h.push({ role: 'user', parts: [{ text: qtext || '[בקשה קולית]' }] }, { role: 'model', parts: [{ text }] });
     if (s.h.length > 12) s.h = s.h.slice(-12);
 
-    let pcm = null;
-    try { pcm = await tts(text, deadline, { voice: VOICE_BY[s.vc], pace: s.pace }); } catch (te) {}
-
-    const tail = s.extraPlayChain ? '.' + s.extraPlayChain : '';
-    s.extraPlayChain = '';
-
-    if (!pcm) return ansFor(s, 't-' + (sp(text) || ERR) + tail);
-
-    const rn = 'r' + s.e + 'n' + s.n;
-    await upload(rn, pcm, deadline, s.d, 30000);
-    s.r = rn;
-    return ansFor(s, 'f-' + s.d + '/' + rn + tail);
+    const isRouteMenu = !!(s.awaitingRouteChoice && s.routeAlternatives && s.routeAlternatives.length > 0);
+    return await speakAndReturn(s, text, deadline, isRouteMenu);
   } catch (e) {
     console.error(id, 'turn failed:', e.message);
     if (!typed) del(qn, s.d);
@@ -929,6 +948,19 @@ async function doTurn(s, q, id, T0, typed) {
 
 async function turnStep(s, q, id, T0) {
   if (s.job) return holdStep(s);
+
+  // טיפול בבחירת חלופת מסלול (הקש 1, 2 או 3)
+  if (s.mode === 'route_choice') {
+    const d = digitsOf(q[s.p]);
+    const idx = parseInt(d, 10) - 1;
+    if (idx >= 0 && idx < (s.routeAlternatives || []).length) {
+      const chosenText = s.routeAlternatives[idx] + ' לשמיעת חלופה אחרת הקש 1, 2 או 3. לבקשה חדשה הקש כוכבית או אפס.';
+      s.n++;
+      return await speakAndReturn(s, chosenText, Date.now() + 45000, true);
+    }
+    return tapAny(s, 't-' + KB_MORE);
+  }
+
   if (s.mode === 'ans') {
     const d = digitsOf(q[s.p]);
     if (d === '1' || d === '2') s.mode = 'menu';
