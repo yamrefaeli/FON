@@ -11,9 +11,9 @@ services:
       - key: NODE_VERSION
         value: "22"
       - key: TEXT_MODEL
-        value: "gemini-2.5-flash"
+        value: "gemini-3.5-flash-lite"
       - key: TEXT_MODEL_FALLBACK
-        value: "gemini-2.5-flash-lite"
+        value: "gemini-3.5-flash-lite"
       - key: IMAGE_MODEL
         value: "imagen-3.0-generate-002"
       - key: TTS_MODEL
@@ -34,13 +34,11 @@ services:
         sync: false
       - key: TARGET_EMAIL
         sync: false
-      - key: SMTP_HOST
-        value: "smtp.gmail.com"
-      - key: SMTP_PORT
-        value: "465"
-      - key: SMTP_USER
+      - key: GAS_MAIL_URL
         sync: false
-      - key: SMTP_PASS
-        sync: false
+      - key: GAS_MAIL_SECRET
+        value: "kav-ai-secret-2026"
       - key: RADIO_FEEDS
         sync: false
+      - key: LIVE_STREAM_EXT
+        value: "7"
