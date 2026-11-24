@@ -26,7 +26,7 @@ const GROQ_MODEL = process.env.GROQ_SEARCH_MODEL || 'openai/gpt-oss-120b';
 const TEXT_MODEL = String(process.env.TEXT_MODEL || '').trim() || 'gemini-2.5-flash';
 const TEXT_FALLBACK_RAW = String(process.env.TEXT_MODEL_FALLBACK || '').trim() || 'gemini-2.5-flash-lite';
 const TEXT_FALLBACK = TEXT_FALLBACK_RAW === 'none' || TEXT_FALLBACK_RAW === TEXT_MODEL ? '' : TEXT_FALLBACK_RAW;
-const IMAGE_MODEL = String(process.env.IMAGE_MODEL || '').trim() || 'imagen-3.0-fast-generate-001';
+const IMAGE_MODEL = String(process.env.IMAGE_MODEL || '').trim() || 'gemini-3.1-flash-image-preview';
 const TTS_LIST = String(process.env.TTS_MODEL || 'gemini-2.5-flash-preview-tts').split(',').map(x => x.trim()).filter(Boolean);
 
 const VOICE = process.env.VOICE || 'Kore';
@@ -571,30 +571,36 @@ async function runGenerateImage(args, deadline) {
   const count = Math.min(4, Math.max(1, parseInt(args.count, 10) || 1));
   const validRatios = ['1:1', '16:9', '9:16', '4:3', '3:4'];
   const aspectRatio = validRatios.includes(args.aspect_ratio) ? args.aspect_ratio : '1:1';
-  const key = KEYS[rot.text++ % KEYS.length];
+  const promptText = String(args.prompt).slice(0, 1000);
 
-  const r = await http(GBASE + IMAGE_MODEL + ':predict', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({
-      instances: [{ prompt: String(args.prompt).slice(0, 1000) }],
-      parameters: { sampleCount: count, aspectRatio }
-    })
-  }, 45000, deadline);
+  const reqBody = {
+    contents: [{ role: 'user', parts: [{ text: promptText }] }],
+    generationConfig: {
+      responseModalities: ['IMAGE'],
+      imageConfig: { aspectRatio }
+    }
+  };
 
-  if (!r.ok) {
-    const errTxt = await r.text();
-    throw new Error('שגיאה ביצירת תמונה: ' + r.status + ' ' + errTxt.slice(0, 150));
-  }
-  const j = await r.json();
-  const preds = j.predictions || [];
-  if (!preds.length) throw new Error('לא התקבלו תמונות מהמודל');
+  const results = await Promise.all(
+    Array.from({ length: count }, () => gem(IMAGE_MODEL, reqBody, deadline, 'text', { ms: 45000, retries: 1 }))
+  );
 
-  const files = preds.map((p, idx) => ({
-    filename: `generated_image_${idx + 1}.png`,
-    base64: p.bytesBase64Encoded,
-    mimeType: p.mimeType || 'image/png'
-  }));
+  const files = [];
+  results.forEach((j, idx) => {
+    const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+    const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
+    if (imgPart) {
+      const mimeType = imgPart.inlineData.mimeType || 'image/png';
+      const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';
+      files.push({
+        filename: `generated_image_${idx + 1}.${ext}`,
+        base64: imgPart.inlineData.data,
+        mimeType
+      });
+    }
+  });
+
+  if (!files.length) throw new Error('לא התקבלו תמונות מהמודל');
 
   await sendViaGasEmail({
     subject: `התמונות שיצרת מוכנות (${files.length} תמונות, יחס ${aspectRatio})`,
