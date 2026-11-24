@@ -29,7 +29,7 @@ const TEXT_FALLBACK = TEXT_FALLBACK_RAW === 'none' || TEXT_FALLBACK_RAW === TEXT
 const IMAGE_MODEL = String(process.env.IMAGE_MODEL || '').trim() || 'gemini-3.1-flash-image-preview';
 const TTS_LIST = String(process.env.TTS_MODEL || 'gemini-2.5-flash-preview-tts').split(',').map(x => x.trim()).filter(Boolean);
 
-const VOICE = process.env.VOICE || 'Kore';
+const VOICE = process.env.VOICE_FEMALE || process.env.VOICE || 'Kore';
 const EXT = (process.env.EXT_PATH || '1').replace(/^\/+|\/+$/g, '') || '1';
 const TOKEN = process.env.YEMOT_TOKEN ||
   (process.env.YEMOT_API_USERNAME && process.env.YEMOT_API_PASSWORD ? process.env.YEMOT_API_USERNAME + ':' + process.env.YEMOT_API_PASSWORD : '');
@@ -133,9 +133,10 @@ const AGENTIC_RULES = `
 2. ניווט ותחבורה ציבורית (google_maps_route): חובה להשתמש אך ורק בכלי google_maps_route לכל שאלה על מסלול הגעה, תחבורה ציבורית, קווי אוטובוס, רכבת, זמני נסיעה או הוראות הגעה. לעולם אל תשתמש בחיפוש ברשת (web_search_parallel) עבור מסלולי הגעה! העבר מוצא ויעד ברורים בישראל (כולל שם עיר). הכלי שומר אוטומטית עד 3 חלופות מסלול. לאחר שהכלי חוזר, אל תקריא את המסלולים המלאים! במקום זאת, תן תקציר של משפט אחד לכל חלופה (איזה קו וזמן כולל) וסיים במשפט: "הבאתי שלוש חלופות, הקש 1 לשמיעת החלופה הראשונה, 2 לשנייה, או 3 לשלישית".
 3. חיפוש ברשת (web_search_parallel): כאשר נדרש מידע עדכני, חדשות, בדיקת עובדות או מחקר (שאינם ניווט), הפעל את כלי החיפוש המקבילי עם מערך של 5 עד 8 שאילתות חיפוש שונות וממוקדות שירוצו בו זמנית. מזג את כל התוצאות לתשובה אחת קוהרנטית ומלאה בלי להקריא כתובות אינטרנט.
 4. רדיו וחדשות RSS (play_rss_radio): כאשר מבקשים לשמוע רדיו, חדשות או שידור מפיד RSS, הפעל את הכלי. אם המשתמש ביקש שידור חי רציף (stream) והוגדרה שלוחת שידור חי, ציין mode="live".
-5. יצירת תמונות (generate_image): כאשר מבקשים לייצר תמונה, הבן מהבקשה את התיאור המפורט (באנגלית עבור המנוע), את הגודל/יחס הגובה-רוחב (ריבוע 1:1, לרוחב 16:9, לאורך 9:16) ואת כמות התמונות (1 עד 4). הפעל את הכלי שישלח אותן אוטומטית למייל דרך סקריפט גוגל.
-6. יצירת אודיו (generate_audio): כאשר מבקשים לייצר קטע שמע, קריינות או הקלטה, הפעל את הכלי וקבע האם להשמיע אותו כאן בשיחה, לשלוח למייל, או שניהם.
-7. סגנון דיבור: ענה בעברית טבעית, שוטפת ונעימה להאזנה בטלפון, ללא סימנים מיוחדים, כוכביות או קישורים, באורך של עד ${MAXW} מילים.
+5. יצירת תמונות (generate_image): כאשר מבקשים לייצר תמונה חדשה בבינה מלאכותית, הבן מהבקשה את התיאור המפורט (באנגלית עבור המנוע), את הגודל/יחס הגובה-רוחב (ריבוע 1:1, לרוחב 16:9, לאורך 9:16) ואת כמות התמונות (1 עד 4). הפעל את הכלי שישלח אותן אוטומטית למייל דרך סקריפט גוגל.
+6. חיפוש תמונות ברשת (search_and_email_images): כאשר מבקשים לחפש תמונות קיימות באינטרנט (למשל תמונות של מקום, מוצר, אישיות או נוף), הפעל כלי זה כדי לחפש את התמונות, להוריד אותן, לוודא שאינן גדולות מ-20 מגה-בייט ולשלוח אותן למייל.
+7. יצירת אודיו (generate_audio): כאשר מבקשים לייצר קטע שמע, קריינות או הקלטה, הפעל את הכלי וקבע האם להשמיע אותו כאן בשיחה, לשלוח למייל, או שניהם.
+8. סגנון דיבור: ענה בעברית טבעית, שוטפת ונעימה להאזנה בטלפון, ללא סימנים מיוחדים, כוכביות או קישורים, באורך של עד ${MAXW} מילים.
 `.replace(/\s+/g, ' ').trim();
 
 const buildSys = (mode, extra) => AGENTIC_RULES + ' ' +
@@ -612,6 +613,131 @@ async function runGenerateImage(args, deadline) {
 }
 
 // ============================================================================
+// כלי 4ב: חיפוש תמונות ברשת, בדיקת גודל עד 20MB ושליחה למייל
+// ============================================================================
+const SEARCH_IMAGES_DECL = {
+  name: 'search_and_email_images',
+  description: 'Search the web for existing images matching a query, download them, verify each file is under 20MB, and send them to the pre-configured email via Google Apps Script.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are searching for the images and sending them to email' },
+      query: { type: 'STRING', description: 'Search query describing the images to find' },
+      count: { type: 'INTEGER', description: 'Number of images to download and send, between 1 and 5' }
+    },
+    required: ['action_announcement', 'query']
+  }
+};
+
+const MAX_IMG_BYTES = 20 * 1024 * 1024; // 20MB
+
+async function fetchImageUnder20MB(url, idx, deadline) {
+  try {
+    const r = await http(url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KavAI-ImageBot/1.0)' }
+    }, 15000, deadline);
+    if (!r.ok) return null;
+
+    const ctype = String(r.headers.get('content-type') || '').toLowerCase();
+    if (!ctype.startsWith('image/') || ctype.includes('svg')) return null;
+
+    const clen = Number(r.headers.get('content-length') || 0);
+    if (clen > MAX_IMG_BYTES) return null;
+
+    const reader = r.body.getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > MAX_IMG_BYTES) {
+        reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+    if (total < 1024) return null;
+
+    const buf = Buffer.concat(chunks, total);
+    const ext = ctype.includes('png') ? 'png' : ctype.includes('webp') ? 'webp' : ctype.includes('gif') ? 'gif' : 'jpg';
+    return {
+      filename: `found_image_${idx + 1}.${ext}`,
+      base64: buf.toString('base64'),
+      mimeType: ctype.split(';')[0].trim(),
+      bytes: total
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function runSearchAndEmailImages(args, deadline) {
+  if (!GROQ_KEYS.length) return { error: 'GROQ_API_KEYS missing' };
+  const query = String(args.query || '').trim();
+  const count = Math.min(5, Math.max(1, parseInt(args.count, 10) || 3));
+  const key = GROQ_KEYS[grot++ % GROQ_KEYS.length];
+
+  const r = await http(GROQ_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: [
+        { role: 'system', content: 'Search the web for direct image URLs (.jpg, .jpeg, .png, .webp) matching the request. Return ONLY a JSON array of up to 10 direct image URL strings, nothing else.' },
+        { role: 'user', content: `Direct image file URLs for: ${query}` }
+      ],
+      tools: [{ type: 'browser_search' }],
+      tool_choice: 'required',
+      reasoning_effort: 'low',
+      max_completion_tokens: 700,
+      stream: false
+    })
+  }, 20000, deadline);
+
+  if (!r.ok) throw new Error('שגיאה בחיפוש תמונות: HTTP ' + r.status);
+  const j = await r.json();
+  const raw = String((((j.choices || [])[0] || {}).message || {}).content || '');
+
+  let urls = [];
+  try {
+    const m = raw.match(/\[[\s\S]*\]/);
+    if (m) urls = JSON.parse(m[0]);
+  } catch (e) {}
+  if (!Array.isArray(urls) || !urls.length) {
+    urls = raw.match(/https?:\/\/[^\s"'<>)\]]+/gi) || [];
+  }
+  urls = [...new Set(urls.map(u => String(u).trim()).filter(u => /^https?:\/\//i.test(u)))].slice(0, 10);
+  if (!urls.length) throw new Error('לא נמצאו קישורי תמונות מתאימים');
+
+  const downloaded = await Promise.all(urls.map((u, idx) => fetchImageUnder20MB(u, idx, deadline)));
+  const validFiles = [];
+  let totalBytes = 0;
+  for (const f of downloaded) {
+    if (!f) continue;
+    if (totalBytes + f.bytes > MAX_IMG_BYTES) continue;
+    totalBytes += f.bytes;
+    validFiles.push({
+      filename: `found_image_${validFiles.length + 1}${path.extname(f.filename)}`,
+      base64: f.base64,
+      mimeType: f.mimeType
+    });
+    if (validFiles.length >= count) break;
+  }
+
+  if (!validFiles.length) throw new Error('לא נמצאו תמונות תקינות מתחת ל-20 מגה-בייט להורדה');
+
+  await sendViaGasEmail({
+    subject: `תמונות שנמצאו עבור: ${query} (${validFiles.length} תמונות)`,
+    body: `שלום,\nמצורפות ${validFiles.length} תמונות שנמצאו ברשת עבור החיפוש:\n"${query}"\n(כל הקבצים נבדקו ותקינים מתחת למגבלת 20 מ"ב).`,
+    files: validFiles
+  }, deadline);
+
+  return { status: 'success', sent_to: TARGET_EMAIL, count: validFiles.length };
+}
+
+// ============================================================================
 // כלי 5: יצירת אודיו והשמעתו בקו או שליחתו למייל דרך Google Apps Script
 // ============================================================================
 const GEN_AUDIO_DECL = {
@@ -697,7 +823,7 @@ async function prepareMedia(m, d, dl0) {
 // --- לולאת הסוכן (Agentic Execution Loop) ---
 async function askModel(sys, contents, deadline, s) {
   const base = { systemInstruction: { parts: [{ text: sys }] } };
-  const decls = [PARALLEL_SEARCH_DECL, RSS_RADIO_DECL, GEN_IMAGE_DECL, GEN_AUDIO_DECL];
+  const decls = [PARALLEL_SEARCH_DECL, RSS_RADIO_DECL, GEN_IMAGE_DECL, SEARCH_IMAGES_DECL, GEN_AUDIO_DECL];
   if (MAPS_KEY) decls.push(MAPS_DECL);
 
   const tools = [{ functionDeclarations: decls }];
@@ -725,6 +851,8 @@ async function askModel(sys, contents, deadline, s) {
           out = rad;
         } else if (fname === 'generate_image') {
           out = await runGenerateImage(args, deadline);
+        } else if (fname === 'search_and_email_images') {
+          out = await runSearchAndEmailImages(args, deadline);
         } else if (fname === 'generate_audio') {
           out = await runGenerateAudio(args, s, deadline);
         } else {
@@ -758,7 +886,7 @@ const voicesFor = (model, name) => isNewTts(model)
   : [{ prebuiltVoiceConfig: { voiceName: name } }, { voice: name }];
 const vIdx = {};
 const ttsDown = {};
-const VOICE_BY = { male: process.env.VOICE_MALE || 'Charon', female: process.env.VOICE_FEMALE || process.env.VOICE || 'Kore' };
+const VOICE_BY = { male: process.env.VOICE_MALE || 'Charon', female: VOICE };
 const SHORT_NOTE = ' הנחיה מהמשתמש: ענה בקצרה, בשניים עד ארבעה משפטים ועד חמישים מילים.';
 const PACE_PREFIX = { slow: 'Say slowly and calmly: ', fast: 'Say quickly: ' };
 
@@ -997,7 +1125,7 @@ const KB_FINAL = { 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' };
 const KB_WAIT = Math.min(60, Math.max(3, parseInt(process.env.KBD_WAIT, 10) || 20));
 const WAIT_SEC = Math.min(15, Math.max(2, parseInt(process.env.INPUT_WAIT_SEC, 10) || 7));
 const MENU_OPEN = 'להקלטת בקשה הקש 1, להקלדה הקש 2';
-const MENU = 'להקלטה  1, להקלדה  2';
+const MENU = 'להקלטה הקש  1, להקלדה הקש  2';
 const KB_MORE = 'לבקשה נוספת, הקש 1 להקלטה או 2 להקלדה';
 const KB_START = 'הקלד ולחץ סולמית לסיום';
 const kbFinal = t => t.replace(/(?<=[א-ת])[כמנפצ](?=\s|$)/g, c => KB_FINAL[c]);
