@@ -127,7 +127,7 @@ const MAXW = Math.min(3000, Math.max(200, parseInt(process.env.MAX_WORDS, 10) ||
 const EXTRA = String(process.env.EXTRA_INSTRUCTION || '').replace(/\s+/g, ' ').trim().slice(0, 2000);
 
 const AGENTIC_RULES = `
-את סוכנת בינה מלאכותית קולית חכמה וסקסית בשם תהילה, יעילה, אדיבה ומדויקת בטלפון.
+את סוכנת בינה מלאכותית קולית חכמה וסקסית דוברת עברית בשם תהילה, יעילה, אדיבה ומדויקת בטלפון.
 עקרון עבודה סוכנותי:
 1. לפני כל הפעלת כלי (Tool), עליך להעביר בשדה action_announcement משפט קצר וברור בעברית שמסביר למתקשר מה אתה הולך לעשות כעת (לדוגמה: "אני בודקת כעת שלוש חלופות מסלול בגוגל מפות", "אני מבצעת כעת חיפוש מעמיק במספר מקורות ברשת", "אני מייצרת כעת את התמונה ושולח אותה למייל שלך").
 2. ניווט ותחבורה ציבורית (google_maps_route): חובה להשתמש אך ורק בכלי google_maps_route לכל שאלה על מסלול הגעה, תחבורה ציבורית, קווי אוטובוס, רכבת, זמני נסיעה או הוראות הגעה. לעולם אל תשתמש בחיפוש ברשת (web_search_parallel) עבור מסלולי הגעה! העבר מוצא ויעד ברורים בישראל (כולל שם עיר). הכלי שומר אוטומטית עד 3 חלופות מסלול. לאחר שהכלי חוזר, אל תקריא את המסלולים המלאים! במקום זאת, תן תקציר של משפט אחד לכל חלופה (איזה קו וזמן כולל) וסיים במשפט: "הבאתי שלוש חלופות, הקש 1 לשמיעת החלופה הראשונה, 2 לשנייה, או 3 לשלישית".
@@ -958,7 +958,7 @@ let CFG = [];
 try { CFG = JSON.parse(process.env.EXTENSIONS || '[]'); } catch (e) { CFG = []; }
 if (!Array.isArray(CFG) || !CFG.length) CFG = [{ p: EXT, m: '2', x: '', g: process.env.GREETING || '' }];
 
-const DEFAULT_GREET = 'שלום וברכה, כאן הסוכן החכם.';
+const DEFAULT_GREET = 'היי, כאן תהילה.';
 const EXTS = {};
 for (const c of CFG) {
   const p = String(c.p || '').replace(/^\/+|\/+$/g, '');
@@ -970,8 +970,8 @@ for (const c of CFG) {
   };
 }
 const EXT_FIRST = EXTS[Object.keys(EXTS)[0]] || { p: EXT, d: '/' + EXT, sys: buildSys('2', ''), g: DEFAULT_GREET };
-const AGAIN = 'לא שמעתי, אנא שאל שוב';
-const ERR = 'הייתה תקלה, נסו שוב';
+const AGAIN = 'לא שמעתי טוב, דבר שוב';
+const ERR = 'תקלה קטנה, ננסה עוד פעם';
 
 const idOf = q => String(q.ApiCallId || 'x').replace(/[^a-zA-Z0-9]/g, '').slice(-24) || 'x';
 const phoneOf = q => { const p = String(q.ApiPhone || '').replace(/\D/g, ''); return p.length >= 7 && p.length <= 15 ? p : ''; };
@@ -991,9 +991,9 @@ const KB_FINAL = { 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' };
 const KB_WAIT = Math.min(60, Math.max(3, parseInt(process.env.KBD_WAIT, 10) || 20));
 const WAIT_SEC = Math.min(15, Math.max(2, parseInt(process.env.INPUT_WAIT_SEC, 10) || 7));
 const MENU_OPEN = 'להקלטת בקשה הקש 1, להקלדה הקש 2';
-const MENU = 'להקלטה הקש 1, להקלדה הקש 2';
+const MENU = 'להקלטה  1, להקלדה  2';
 const KB_MORE = 'לבקשה נוספת, הקש 1 להקלטה או 2 להקלדה';
-const KB_START = 'הקלד את הבקשה ובסיום הקש סולמית';
+const KB_START = 'הקלד ולחץ סולמית לסיום';
 const kbFinal = t => t.replace(/(?<=[א-ת])[כמנפצ](?=\s|$)/g, c => KB_FINAL[c]);
 
 const askFor = async (s, preText) => {
