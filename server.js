@@ -4,7 +4,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const execFileP = require('util').promisify(require('child_process').execFile);
-const nodemailer = require('nodemailer');
 const { XMLParser } = require('fast-xml-parser');
 
 const FFMPEG = process.env.FFMPEG_PATH || (() => { try { return require('ffmpeg-static'); } catch (e) { return null; } })();
@@ -37,25 +36,43 @@ const GBASE = process.env.GEMINI_BASE || 'https://generativelanguage.googleapis.
 const BUDGET = Number(process.env.TURN_BUDGET_MS) || 85000;
 const REC_MAX = String(parseInt(process.env.REC_MAX, 10) || 30);
 
-// --- הגדרות מייל ---
+// --- הגדרות Google Apps Script לשליחת מייל ---
 const TARGET_EMAIL = String(process.env.TARGET_EMAIL || '').trim();
-const mailer = (process.env.SMTP_USER && process.env.SMTP_PASS) ? nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: Number(process.env.SMTP_PORT) || 465,
-  secure: (Number(process.env.SMTP_PORT) || 465) === 465,
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-}) : null;
+const GAS_MAIL_URL = String(process.env.GAS_MAIL_URL || '').trim();
+const GAS_MAIL_SECRET = String(process.env.GAS_MAIL_SECRET || 'kav-ai-secret-2026').trim();
 
-// --- הגדרות רדיו RSS ---
+async function sendViaGasEmail({ subject, body, files }, deadline) {
+  if (!GAS_MAIL_URL || !TARGET_EMAIL) {
+    throw new Error('חסרה הגדרת GAS_MAIL_URL או TARGET_EMAIL בשרת');
+  }
+  const r = await http(GAS_MAIL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    redirect: 'follow',
+    body: JSON.stringify({
+      token: GAS_MAIL_SECRET,
+      to: TARGET_EMAIL,
+      subject,
+      body,
+      files: files || []
+    })
+  }, 30000, deadline);
+  const txt = await r.text();
+  let j = {};
+  try { j = JSON.parse(txt); } catch (e) {}
+  if (!r.ok || j.ok === false) {
+    throw new Error('שגיאת Google Apps Script: ' + (j.error || txt.slice(0, 120)));
+  }
+  return true;
+}
+
+// --- הגדרות רדיו RSS ושידור חי ---
 let RADIO_FEEDS = [];
 try { RADIO_FEEDS = JSON.parse(process.env.RADIO_FEEDS || '[]'); } catch (e) { RADIO_FEEDS = []; }
 RADIO_FEEDS = (Array.isArray(RADIO_FEEDS) ? RADIO_FEEDS : []).filter(f => f && f.n && /^https?:\/\//i.test(f.u));
+const LIVE_STREAM_EXT = String(process.env.LIVE_STREAM_EXT || '').replace(/^\/+|\/+$/g, '');
 
 // --- פונקציות עזר ---
-const safeEq = (a, b) => {
-  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-};
 const sp = s => String(s).replace(/[.\-"'&|,=*#\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const isBudget = e => !!(e && e.budget);
@@ -74,7 +91,6 @@ async function http(url, opt, ms, deadline) {
   return fetch(url, { ...opt, signal: AbortSignal.timeout(Math.min(ms, left)) });
 }
 
-// --- מערכת ניהול תור הודעות ביניים קוליות (Agentic Status Announcements) ---
 function pushStatus(s, text) {
   if (!s || !text) return;
   const clean = sp(text);
@@ -84,7 +100,7 @@ function pushStatus(s, text) {
   if (s.onStatus) { const fn = s.onStatus; s.onStatus = null; fn(); }
 }
 
-// --- הנחיית המערכת הסוכנותית (ללא הגבלות דת מחמירות) ---
+// --- הנחיית המערכת הסוכנותית (נקייה מהגבלות דת מחמירות) ---
 const VOICE_CTL = ' אם המשתמש מבקש לשנות את הקול, את קצב הדיבור או את אורך התשובות, התחל את התשובה בתג מתאים ואחריו אשר בקצרה: [[VOICE:male]] לקול גברי, [[VOICE:female]] לקול נשי, [[VOICE:default]] לקול רגיל, [[PACE:slow]] לאט, [[PACE:fast]] מהר, [[PACE:normal]] רגיל, [[LEN:short]] לתשובות קצרות, [[LEN:long]] לתשובות מפורטות.';
 const TRANSCRIBE_HINT = ' אם השאלה הגיעה כהקלטה קולית, התחל את התשובה בתג [[Q:תמלול מדויק של השאלה במילים]] ואחריו התשובה עצמה.';
 const MAXW = Math.min(1000, Math.max(500, parseInt(process.env.MAX_WORDS, 10) || 700));
@@ -96,8 +112,8 @@ const AGENTIC_RULES = `
 1. לפני כל הפעלת כלי (Tool), עליך להעביר בשדה action_announcement משפט קצר וברור בעברית שמסביר למתקשר מה אתה הולך לעשות כעת (לדוגמה: "אני בודק כעת את מסלול התחבורה הציבורית בגוגל מפות", "אני מבצע כעת חיפוש מעמיק במספר מקורות ברשת", "אני מייצר כעת את התמונה ושולח אותה למייל שלך").
 2. ניווט ותחבורה ציבורית (google_maps_route): כאשר מבקשים מסלול הגעה, הפעל את הכלי עם מוצא ויעד מדויקים. לאחר קבלת הנתונים, נסח תשובה קולית ברורה, נעימה ומסודרת כרונולוגית הכוללת את כל הפרטים ללא דילוגים: נקודת היציאה, שם תחנת העלייה ומספר התחנה, מספר הקו והמפעיל, שעת יציאה מדויקת, כמה תחנות נוסעים, באיזו תחנה יורדים ובאיזו שעה, ואם יש המשך הליכה או החלפה — לאן ללכת, באילו רחובות לפנות ומה המרחק.
 3. חיפוש ברשת (web_search_parallel): כאשר נדרש מידע עדכני, חדשות, בדיקת עובדות או מחקר, הפעל את כלי החיפוש המקבילי עם מערך של 5 עד 8 שאילתות חיפוש שונות וממוקדות שירוצו בו זמנית כדי לכסות את הנושא מכל הזוויות. מזג את כל התוצאות לתשובה אחת קוהרנטית ומלאה בלי להקריא כתובות אינטרנט.
-4. רדיו וחדשות RSS (play_rss_radio): כאשר מבקשים לשמוע רדיו, חדשות או שידור רציף מפיד RSS, הפעל את הכלי המתאים.
-5. יצירת תמונות (generate_image): כאשר מבקשים לייצר תמונה, הבן מהבקשה את התיאור המפורט (באנגלית עבור המנוע), את הגודל/יחס הגובה-רוחב (ריבוע 1:1, לרוחב 16:9, לאורך 9:16) ואת כמות התמונות (1 עד 4). הפעל את הכלי שישלח אותן אוטומטית למייל המוגדר מראש.
+4. רדיו וחדשות RSS (play_rss_radio): כאשר מבקשים לשמוע רדיו, חדשות או שידור רציף מפיד RSS, הפעל את הכלי. אם המשתמש ביקש שידור חי רציף (stream) והוגדרה שלוחת שידור חי, ציין mode="live".
+5. יצירת תמונות (generate_image): כאשר מבקשים לייצר תמונה, הבן מהבקשה את התיאור המפורט (באנגלית עבור המנוע), את הגודל/יחס הגובה-רוחב (ריבוע 1:1, לרוחב 16:9, לאורך 9:16) ואת כמות התמונות (1 עד 4). הפעל את הכלי שישלח אותן אוטומטית למייל דרך סקריפט גוגל.
 6. יצירת אודיו (generate_audio): כאשר מבקשים לייצר קטע שמע, קריינות או הקלטה, הפעל את הכלי וקבע האם להשמיע אותו כאן בשיחה, לשלוח למייל, או שניהם.
 7. סגנון דיבור: ענה בעברית טבעית, שוטפת ונעימה להאזנה בטלפון, ללא סימנים מיוחדים, כוכביות או קישורים, באורך של עד ${MAXW} מילים (אלא אם התבקשת לקצר).
 `.replace(/\s+/g, ' ').trim();
@@ -165,7 +181,7 @@ async function textGen(body, deadline) {
 }
 
 // ============================================================================
-// כלי 1: ניווט מדויק בגוגל מפות (Google Maps Directions API)
+// כלי 1: ניווט מדויק בגוגל מפות
 // ============================================================================
 const MAPS_DECL = {
   name: 'google_maps_route',
@@ -251,7 +267,7 @@ async function runGoogleMapsRoute(args, deadline) {
 }
 
 // ============================================================================
-// כלי 2: חיפוש רשת מקבילי ב-Groq (5 עד 8 פקודות חיפוש בו-זמנית)
+// כלי 2: חיפוש רשת מקבילי ב-Groq (5 עד 8 שאילתות בו-זמנית)
 // ============================================================================
 const PARALLEL_SEARCH_DECL = {
   name: 'web_search_parallel',
@@ -308,17 +324,18 @@ async function runParallelGroqSearch(queries, deadline) {
 }
 
 // ============================================================================
-// כלי 3: השמעת רדיו רציפה על פי RSS פעילים
+// כלי 3: השמעת רדיו רציפה על פי RSS פעילים (או העברה לשלוחת שידור חי)
 // ============================================================================
 const RSS_RADIO_DECL = {
   name: 'play_rss_radio',
-  description: 'Fetch and play continuous audio episodes or news bulletins from active RSS radio feeds.',
+  description: 'Fetch and play continuous audio episodes or news bulletins from active RSS radio feeds, or transfer to live stream extension if requested.',
   parameters: {
     type: 'OBJECT',
     properties: {
       action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are loading the radio broadcast' },
       station_name: { type: 'STRING', description: 'Name or keyword of the radio station/feed, or empty for the first available feed' },
-      rss_url: { type: 'STRING', description: 'Optional direct RSS feed URL if known' }
+      rss_url: { type: 'STRING', description: 'Optional direct RSS feed URL if known' },
+      mode: { type: 'STRING', description: '"rss" (default - plays latest episodes continuously) or "live" (transfers to Yemot live stream extension)' }
     },
     required: ['action_announcement']
   }
@@ -326,7 +343,12 @@ const RSS_RADIO_DECL = {
 
 const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
-async function prepareRssRadio(args, d, deadline) {
+async function prepareRssRadio(args, s, deadline) {
+  if (args.mode === 'live' && LIVE_STREAM_EXT) {
+    s.transferToExt = '/' + LIVE_STREAM_EXT;
+    return { status: 'transferring_to_live_stream', extension: LIVE_STREAM_EXT };
+  }
+
   let feedUrl = String(args.rss_url || '').trim();
   if (!feedUrl && RADIO_FEEDS.length) {
     const qName = String(args.station_name || '').trim();
@@ -335,7 +357,7 @@ async function prepareRssRadio(args, d, deadline) {
   }
   if (!feedUrl) throw new Error('לא הוגדרו תחנות רדיו ב-RADIO_FEEDS');
 
-  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.0' } }, 12000, deadline);
+  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.1' } }, 12000, deadline);
   if (!r.ok) throw new Error('שגיאה בטעינת פיד RSS: ' + r.status);
   const xmlText = await r.text();
   const parsed = xmlParser.parse(xmlText);
@@ -344,7 +366,7 @@ async function prepareRssRadio(args, d, deadline) {
 
   const audioUrls = [];
   const titles = [];
-  for (const it of list.slice(0, 5)) {
+  for (const it of list.slice(0, 6)) {
     if (!it) continue;
     const enc = it.enclosure;
     const url = enc ? (Array.isArray(enc) ? enc[0]['@_url'] : enc['@_url']) : '';
@@ -355,12 +377,11 @@ async function prepareRssRadio(args, d, deadline) {
   }
   if (!audioUrls.length) throw new Error('לא נמצאו קבצי שמע פעילים בפיד ה-RSS');
 
-  // הכנת עד 3 קטעי השידור האחרונים להשמעה רציפה בשרשרת של ימות המשיח
   const files = [];
   for (let i = 0; i < Math.min(3, audioUrls.length); i++) {
     try {
-      const res = await prepareMedia({ n: titles[i] || 'רדיו', u: audioUrls[i] }, d, deadline);
-      if (res && res.name) files.push('f-' + d + '/' + res.name);
+      const res = await prepareMedia({ n: titles[i] || 'רדיו', u: audioUrls[i] }, s.d, deadline);
+      if (res && res.name) files.push('f-' + s.d + '/' + res.name);
     } catch (e) {
       console.error('RSS item prep failed:', e.message);
     }
@@ -370,11 +391,11 @@ async function prepareRssRadio(args, d, deadline) {
 }
 
 // ============================================================================
-// כלי 4: יצירת תמונה (הבנת גודל וכמות) ושליחה לכתובת מייל מוגדרת מראש
+// כלי 4: יצירת תמונה ושליחה דרך Google Apps Script
 // ============================================================================
 const GEN_IMAGE_DECL = {
   name: 'generate_image',
-  description: 'Generate AI images with specific aspect ratio/size and count (1-4), and email them to the pre-configured email address.',
+  description: 'Generate AI images with specific aspect ratio/size and count (1-4), and email them via Google Apps Script.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -389,7 +410,6 @@ const GEN_IMAGE_DECL = {
 
 async function runGenerateImage(args, deadline) {
   if (!KEYS.length) return { error: 'GEMINI_API_KEYS missing' };
-  if (!mailer || !TARGET_EMAIL) return { error: 'שליחת מייל אינה מוגדרת בשרת (חסר SMTP או TARGET_EMAIL)' };
 
   const count = Math.min(4, Math.max(1, parseInt(args.count, 10) || 1));
   const validRatios = ['1:1', '16:9', '9:16', '4:3', '3:4'];
@@ -413,30 +433,27 @@ async function runGenerateImage(args, deadline) {
   const preds = j.predictions || [];
   if (!preds.length) throw new Error('לא התקבלו תמונות מהמודל');
 
-  const attachments = preds.map((p, idx) => ({
+  const files = preds.map((p, idx) => ({
     filename: `generated_image_${idx + 1}.png`,
-    content: Buffer.from(p.bytesBase64Encoded, 'base64'),
-    contentType: p.mimeType || 'image/png'
+    base64: p.bytesBase64Encoded,
+    mimeType: p.mimeType || 'image/png'
   }));
 
-  await mailer.sendMail({
-    from: `"קו AI סוכנותי" <${process.env.SMTP_USER}>`,
-    to: TARGET_EMAIL,
-    subject: `התמונות שיצרת מוכנות (${attachments.length} תמונות, יחס ${aspectRatio})`,
-    text: `שלום,\nמצורפות ${attachments.length} תמונות שנוצרו לפי הבקשה שלך:\n"${args.prompt}"\nגודל/יחס: ${aspectRatio}`
-    ,
-    attachments
-  });
+  await sendViaGasEmail({
+    subject: `התמונות שיצרת מוכנות (${files.length} תמונות, יחס ${aspectRatio})`,
+    body: `שלום,\nמצורפות ${files.length} תמונות שנוצרו לפי הבקשה שלך:\n"${args.prompt}"\nגודל/יחס: ${aspectRatio}`,
+    files
+  }, deadline);
 
-  return { status: 'success', sent_to: TARGET_EMAIL, count: attachments.length, aspect_ratio: aspectRatio };
+  return { status: 'success', sent_to: TARGET_EMAIL, count: files.length, aspect_ratio: aspectRatio };
 }
 
 // ============================================================================
-// כלי 5: יצירת אודיו והשמעתו בקו או שליחתו למייל
+// כלי 5: יצירת אודיו והשמעתו בקו או שליחתו למייל דרך Google Apps Script
 // ============================================================================
 const GEN_AUDIO_DECL = {
   name: 'generate_audio',
-  description: 'Generate custom spoken audio/narration from text, and either play it on the phone call, send it to the pre-configured email, or both.',
+  description: 'Generate custom spoken audio/narration from text, and either play it on the phone call, send it to the pre-configured email via Google Apps Script, or both.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -457,14 +474,15 @@ async function runGenerateAudio(args, s, deadline) {
   const title = String(args.title || 'קובץ שמע מקו AI').slice(0, 60);
 
   if (delivery === 'email' || delivery === 'both') {
-    if (!mailer || !TARGET_EMAIL) throw new Error('שליחת מייל אינה מוגדרת בשרת');
-    await mailer.sendMail({
-      from: `"קו AI סוכנותי" <${process.env.SMTP_USER}>`,
-      to: TARGET_EMAIL,
+    await sendViaGasEmail({
       subject: `קובץ אודיו חדש: ${title}`,
-      text: `שלום,\nמצורף קובץ השמע שביקשת לייצר.\nתוכן הטקסט:\n${args.script_text}`,
-      attachments: [{ filename: 'audio_output.wav', content: wavBuf, contentType: 'audio/wav' }]
-    });
+      body: `שלום,\nמצורף קובץ השמע שביקשת לייצר.\nתוכן הטקסט:\n${args.script_text}`,
+      files: [{
+        filename: 'audio_output.wav',
+        base64: wavBuf.toString('base64'),
+        mimeType: 'audio/wav'
+      }]
+    }, deadline);
   }
 
   if (delivery === 'play' || delivery === 'both') {
@@ -526,7 +544,6 @@ async function askModel(sys, contents, deadline, s) {
     const fcalls = ((cand.content || {}).parts || []).filter(p => p.functionCall);
     if (!fcalls.length) return a;
 
-    // השמעת הצהרת הכוונות הראשונה מיד למתקשר בזמן שהכלים רצים ברקע
     const firstAnnounce = fcalls.map(c => (c.functionCall.args || {}).action_announcement).find(Boolean);
     if (firstAnnounce) pushStatus(s, firstAnnounce);
 
@@ -540,9 +557,9 @@ async function askModel(sys, contents, deadline, s) {
         } else if (fname === 'web_search_parallel') {
           out = await runParallelGroqSearch(args.queries, deadline);
         } else if (fname === 'play_rss_radio') {
-          const rad = await prepareRssRadio(args, s.d, deadline);
-          s.extraPlayChain = (s.extraPlayChain ? s.extraPlayChain + '.' : '') + rad.chain;
-          out = { status: 'playing_radio_now', episodes: rad.titles };
+          const rad = await prepareRssRadio(args, s, deadline);
+          if (rad.chain) s.extraPlayChain = (s.extraPlayChain ? s.extraPlayChain + '.' : '') + rad.chain;
+          out = rad;
         } else if (fname === 'generate_image') {
           out = await runGenerateImage(args, deadline);
         } else if (fname === 'generate_audio') {
@@ -802,12 +819,12 @@ async function kbStep(s, q, id, T0) {
   return runTurn(s, q, id, T0, text);
 }
 
-// --- ניהול הרצת המשימה ברקע והשמעת הצהרות כוונה למאזין ---
 function runTurn(s, q, id, T0, typed) {
   if (!typed && !q[s.p]) return tapAny(s, 't-' + AGAIN);
   s.jobT0 = Date.now();
   s.statusQueue = [sp('קיבלתי רגע אחד')];
   s.extraPlayChain = '';
+  s.transferToExt = '';
   s.job = doTurn(s, q, id, s.jobT0, typed).catch(e => {
     console.error(id, 'turn crashed', e && e.message);
     return tapAny(s, 't-' + ERR);
@@ -816,14 +833,12 @@ function runTurn(s, q, id, T0, typed) {
 }
 
 async function holdStep(s) {
-  // אם הצטברו הצהרות כוונה מהסוכן (למשל "אני בודק כעת בגוגל מפות..."), נשמיע אותן מיד!
   if (s.statusQueue && s.statusQueue.length > 0) {
     const msg = s.statusQueue.shift();
     s.hn++;
     return 'read=t-' + msg + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
   }
 
-  // המתנה לסיום המשימה או להצהרת כוונה חדשה מהסוכן
   const waitSig = new Promise(res => { s.onStatus = res; });
   const r = await Promise.race([s.job, waitSig.then(() => null), sleep(6000).then(() => 'tick')]);
   s.onStatus = null;
@@ -868,6 +883,13 @@ async function doTurn(s, q, id, T0, typed) {
       deadline,
       s
     );
+
+    // אם התבקש מעבר לשלוחת שידור חי (type=stream) בימות המשיח
+    if (s.transferToExt) {
+      const target = s.transferToExt;
+      s.transferToExt = '';
+      return `id_list_message=t-${sp('מעביר אותך לשידור החי')}&go_to_folder=${target}`;
+    }
 
     const parts = (((a.candidates || [])[0] || {}).content || {}).parts || [];
     let text = parts.filter(p => !p.thought).map(p => p.text || '').join('').trim();
