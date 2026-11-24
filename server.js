@@ -72,7 +72,7 @@ async function sendViaGasEmail({ subject, body, files }, deadline) {
   return true;
 }
 
-// --- הגדרות רדיו RSS ושידור חי (כולל ניקוי אוטומטי של פורמט קישורים) ---
+// --- הגדרות רדיו RSS ושידור חי ---
 let RADIO_FEEDS = [];
 try {
   const rawFeeds = String(process.env.RADIO_FEEDS || '[]').trim().replace(/^'+|'+$/g, '');
@@ -113,7 +113,7 @@ async function http(url, opt, ms, deadline) {
 
 function pushStatus(s, text) {
   if (!s || !text) return;
-  const clean = sp(text);
+  const clean = String(text).replace(/\s+/g, ' ').trim();
   if (!clean) return;
   s.statusQueue = s.statusQueue || [];
   s.statusQueue.push(clean);
@@ -130,8 +130,8 @@ const AGENTIC_RULES = `
 אתה סוכן בינה מלאכותית קולי חכם, יעיל, אדיב ומדויק בטלפון.
 עקרון עבודה סוכנותי:
 1. לפני כל הפעלת כלי (Tool), עליך להעביר בשדה action_announcement משפט קצר וברור בעברית שמסביר למתקשר מה אתה הולך לעשות כעת (לדוגמה: "אני בודק כעת שלוש חלופות מסלול בגוגל מפות", "אני מבצע כעת חיפוש מעמיק במספר מקורות ברשת", "אני מייצר כעת את התמונה ושולח אותה למייל שלך").
-2. ניווט ותחבורה ציבורית (google_maps_route): כאשר מבקשים מסלול הגעה, הפעל את הכלי עם מוצא ויעד מדויקים. הכלי שומר אוטומטית עד 3 חלופות מסלול. לאחר שהכלי חוזר, אל תקריא את המסלולים המלאים! במקום זאת, תן תקציר של משפט אחד לכל חלופה (איזה קו וזמן כולל) וסיים במשפט: "הבאתי שלוש חלופות, הקש 1 לשמיעת החלופה הראשונה, 2 לשנייה, או 3 לשלישית".
-3. חיפוש ברשת (web_search_parallel): כאשר נדרש מידע עדכני, חדשות, בדיקת עובדות או מחקר, הפעל את כלי החיפוש המקבילי עם מערך של 5 עד 8 שאילתות חיפוש שונות וממוקדות שירוצו בו זמנית כדי לכסות את הנושא מכל הזוויות. מזג את כל התוצאות לתשובה אחת קוהרנטית ומלאה בלי להקריא כתובות אינטרנט.
+2. ניווט ותחבורה ציבורית (google_maps_route): חובה להשתמש אך ורק בכלי google_maps_route לכל שאלה על מסלול הגעה, תחבורה ציבורית, קווי אוטובוס, רכבת, זמני נסיעה או הוראות הגעה. לעולם אל תשתמש בחיפוש ברשת (web_search_parallel) עבור מסלולי הגעה! העבר מוצא ויעד ברורים בישראל (כולל שם עיר). הכלי שומר אוטומטית עד 3 חלופות מסלול. לאחר שהכלי חוזר, אל תקריא את המסלולים המלאים! במקום זאת, תן תקציר של משפט אחד לכל חלופה (איזה קו וזמן כולל) וסיים במשפט: "הבאתי שלוש חלופות, הקש 1 לשמיעת החלופה הראשונה, 2 לשנייה, או 3 לשלישית".
+3. חיפוש ברשת (web_search_parallel): כאשר נדרש מידע עדכני, חדשות, בדיקת עובדות או מחקר (שאינם ניווט), הפעל את כלי החיפוש המקבילי עם מערך של 5 עד 8 שאילתות חיפוש שונות וממוקדות שירוצו בו זמנית. מזג את כל התוצאות לתשובה אחת קוהרנטית ומלאה בלי להקריא כתובות אינטרנט.
 4. רדיו וחדשות RSS (play_rss_radio): כאשר מבקשים לשמוע רדיו, חדשות או שידור מפיד RSS, הפעל את הכלי. אם המשתמש ביקש שידור חי רציף (stream) והוגדרה שלוחת שידור חי, ציין mode="live".
 5. יצירת תמונות (generate_image): כאשר מבקשים לייצר תמונה, הבן מהבקשה את התיאור המפורט (באנגלית עבור המנוע), את הגודל/יחס הגובה-רוחב (ריבוע 1:1, לרוחב 16:9, לאורך 9:16) ואת כמות התמונות (1 עד 4). הפעל את הכלי שישלח אותן אוטומטית למייל דרך סקריפט גוגל.
 6. יצירת אודיו (generate_audio): כאשר מבקשים לייצר קטע שמע, קריינות או הקלטה, הפעל את הכלי וקבע האם להשמיע אותו כאן בשיחה, לשלוח למייל, או שניהם.
@@ -201,19 +201,19 @@ async function textGen(body, deadline) {
 }
 
 // ============================================================================
-// כלי 1: ניווט מדויק בגוגל מפות (3 חלופות מסלול עם בחירה ב-1/2/3)
+// כלי 1: ניווט מדויק בגוגל מפות (Routes API v2 + גיבוי Directions Legacy)
 // ============================================================================
 const MAPS_DECL = {
   name: 'google_maps_route',
-  description: 'Get up to 3 alternative public transit and walking routes from Google Maps including stop names, stop codes/numbers, line numbers, departure/arrival times, number of stops, and street-by-street walking instructions.',
+  description: 'REQUIRED for all public transit, bus, train, walking, and driving directions in Israel. Fetches up to 3 alternative routes from Google Maps Routes API with line numbers, stop names, departure/arrival times, stop counts, and walking instructions.',
   parameters: {
     type: 'OBJECT',
     properties: {
       action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are checking 3 route alternatives on Google Maps' },
-      origin: { type: 'STRING', description: 'Starting address, station, or landmark in Israel' },
-      destination: { type: 'STRING', description: 'Destination address, station, or landmark in Israel' },
+      origin: { type: 'STRING', description: 'Starting address, station, or landmark with city in Israel (e.g., "תחנה מרכזית ירושלים")' },
+      destination: { type: 'STRING', description: 'Destination address, station, or landmark with city in Israel (e.g., "דיזנגוף סנטר תל אביב")' },
       mode: { type: 'STRING', description: 'transit (default), walking, or driving' },
-      departure_time: { type: 'STRING', description: 'Optional: "now" or Unix timestamp' }
+      departure_time: { type: 'STRING', description: 'Optional: "now" or ISO-8601 / Unix timestamp' }
     },
     required: ['action_announcement', 'origin', 'destination']
   }
@@ -221,43 +221,180 @@ const MAPS_DECL = {
 
 const stripHtml = h => String(h || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-function formatRouteSpeech(route, index) {
+const fmtTimeIL = iso => {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false });
+  } catch (e) {
+    return '';
+  }
+};
+
+const fmtDurSec = durStr => {
+  const sec = parseInt(String(durStr || '').replace(/s$/, ''), 10);
+  if (!sec || Number.isNaN(sec)) return '';
+  const mins = Math.round(sec / 60);
+  if (mins < 60) return `${mins} דקות`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h} שעות ו-${m} דקות` : `${h} שעות`;
+};
+
+function formatRouteV2Speech(route, index, originLabel) {
+  const leg = (route.legs || [])[0] || {};
+  const durText = (route.localizedValues && route.localizedValues.duration && route.localizedValues.duration.text) ||
+    (leg.localizedValues && leg.localizedValues.duration && leg.localizedValues.duration.text) ||
+    fmtDurSec(route.duration || leg.duration);
+
+  const steps = leg.steps || [];
+  let lastArrival = '';
+  for (const st of steps) {
+    if (st.transitDetails) {
+      const sd = st.transitDetails.stopDetails || {};
+      const lv = st.transitDetails.localizedValues || {};
+      const arr = (lv.arrivalTime && lv.arrivalTime.time && lv.arrivalTime.time.text) || fmtTimeIL(sd.arrivalTime);
+      if (arr) lastArrival = arr;
+    }
+  }
+
+  const lines = [];
+  lines.push(`חלופה מספר ${index + 1}: יציאה מ${originLabel}${durText ? ', משך נסיעה כולל ' + durText : ''}${lastArrival ? ', הגעה משוערת בשעה ' + lastArrival : ''}.`);
+
+  const transitLines = [];
+  for (const st of steps) {
+    if (st.travelMode === 'TRANSIT' && st.transitDetails) {
+      const td = st.transitDetails;
+      const tl = td.transitLine || {};
+      const agency = (tl.agencies && tl.agencies[0]) ? `של חברת ${tl.agencies[0].name}` : '';
+      const lineNum = tl.nameShort || tl.name || '';
+      if (lineNum) transitLines.push(lineNum);
+
+      const sd = td.stopDetails || {};
+      const lv = td.localizedValues || {};
+      const depStop = (sd.departureStop && sd.departureStop.name) || '';
+      const depTime = (lv.departureTime && lv.departureTime.time && lv.departureTime.time.text) || fmtTimeIL(sd.departureTime);
+      const arrStop = (sd.arrivalStop && sd.arrivalStop.name) || '';
+      const arrTime = (lv.arrivalTime && lv.arrivalTime.time && lv.arrivalTime.time.text) || fmtTimeIL(sd.arrivalTime);
+      const stopsCount = td.stopCount || 0;
+
+      lines.push(`עולים בתחנת ${depStop}, על קו ${lineNum} ${agency} לכיוון ${td.headsign || ''}${depTime ? ', בשעה ' + depTime : ''}.${stopsCount ? ' נוסעים ' + stopsCount + ' תחנות,' : ''} ויורדים בתחנת ${arrStop}${arrTime ? ' בשעה ' + arrTime : ''}.`);
+    } else if (st.travelMode === 'WALK') {
+      const instr = (st.navigationInstruction && st.navigationInstruction.instructions) || '';
+      const dist = (st.localizedValues && st.localizedValues.distance && st.localizedValues.distance.text) || (st.distanceMeters ? `${st.distanceMeters} מטרים` : '');
+      if (instr || dist) {
+        lines.push(`הליכה רגלית${dist ? ' של ' + dist : ''}${instr ? ': ' + instr : ''}.`);
+      }
+    } else {
+      const instr = (st.navigationInstruction && st.navigationInstruction.instructions) || '';
+      const dist = (st.localizedValues && st.localizedValues.distance && st.localizedValues.distance.text) || (st.distanceMeters ? `${st.distanceMeters} מטרים` : '');
+      if (instr || dist) {
+        lines.push(`${instr}${dist ? ' (' + dist + ')' : ''}.`);
+      }
+    }
+  }
+
+  return {
+    fullText: lines.join(' '),
+    summary: {
+      option: index + 1,
+      duration: durText,
+      lines: transitLines.join(' ואז קו ') || 'הליכה / רכב',
+      arrival: lastArrival
+    }
+  };
+}
+
+function formatRouteLegacySpeech(route, index) {
   const leg = route.legs[0];
   const lines = [];
   lines.push(`חלופה מספר ${index + 1}: יציאה מ${leg.start_address}, משך נסיעה כולל ${leg.duration ? leg.duration.text : ''}, הגעה משוערת בשעה ${leg.arrival_time ? leg.arrival_time.text : ''}.`);
 
+  const transitLines = [];
   for (const st of (leg.steps || [])) {
     if (st.travel_mode === 'TRANSIT' && st.transit_details) {
       const td = st.transit_details;
       const line = td.line || {};
       const agency = (line.agencies && line.agencies[0]) ? `של חברת ${line.agencies[0].name}` : '';
       const lineNum = line.short_name || line.name || '';
+      if (lineNum) transitLines.push(lineNum);
       const depStop = td.departure_stop ? td.departure_stop.name : '';
-      const depCode = (td.departure_stop && td.departure_stop.stop_code) ? `, מספר תחנה ${td.departure_stop.stop_code}` : '';
       const depTime = td.departure_time ? td.departure_time.text : '';
       const arrStop = td.arrival_stop ? td.arrival_stop.name : '';
-      const arrCode = (td.arrival_stop && td.arrival_stop.stop_code) ? `, מספר תחנה ${td.arrival_stop.stop_code}` : '';
       const arrTime = td.arrival_time ? td.arrival_time.text : '';
       const stopsCount = td.num_stops || 0;
 
-      lines.push(`עולים בתחנת ${depStop}${depCode}, על קו ${lineNum} ${agency} לכיוון ${td.headsign || ''}, בשעה ${depTime}. נוסעים ${stopsCount} תחנות, ויורדים בתחנת ${arrStop}${arrCode} בשעה ${arrTime}.`);
+      lines.push(`עולים בתחנת ${depStop}, על קו ${lineNum} ${agency} לכיוון ${td.headsign || ''}, בשעה ${depTime}. נוסעים ${stopsCount} תחנות, ויורדים בתחנת ${arrStop} בשעה ${arrTime}.`);
     } else if (st.travel_mode === 'WALKING') {
       const mainWalk = stripHtml(st.html_instructions);
       const dist = st.distance ? st.distance.text : '';
-      let subDetails = '';
-      if (st.steps && Array.isArray(st.steps) && st.steps.length > 1) {
-        subDetails = ' פירוט הרחובות: ' + st.steps.map(sub => `${stripHtml(sub.html_instructions)} (${sub.distance ? sub.distance.text : ''})`).join(', ') + '.';
-      }
-      lines.push(`הליכה רגלית של ${dist}: ${mainWalk}.${subDetails}`);
+      lines.push(`הליכה רגלית של ${dist}: ${mainWalk}.`);
     } else {
       lines.push(`${stripHtml(st.html_instructions)} (${st.distance ? st.distance.text : ''}).`);
     }
   }
-  return lines.join(' ');
+  return {
+    fullText: lines.join(' '),
+    summary: {
+      option: index + 1,
+      duration: leg.duration ? leg.duration.text : '',
+      lines: transitLines.join(' ואז קו ') || 'הליכה / רכב',
+      arrival: leg.arrival_time ? leg.arrival_time.text : ''
+    }
+  };
 }
 
 async function runGoogleMapsRoute(args, s, deadline) {
   if (!MAPS_KEY) return { error: 'GOOGLE_MAPS_API_KEY is not configured on the server' };
+
+  const modeMap = { transit: 'TRANSIT', walking: 'WALK', driving: 'DRIVE', bicycling: 'BICYCLE' };
+  const travelMode = modeMap[String(args.mode || 'transit').toLowerCase()] || 'TRANSIT';
+
+  const body = {
+    origin: { address: String(args.origin).trim() },
+    destination: { address: String(args.destination).trim() },
+    travelMode,
+    computeAlternativeRoutes: true,
+    languageCode: 'he',
+    regionCode: 'IL',
+    units: 'METRIC'
+  };
+
+  if (args.departure_time && args.departure_time !== 'now') {
+    const ts = Number(args.departure_time);
+    body.departureTime = !Number.isNaN(ts) ? new Date(ts * 1000).toISOString() : String(args.departure_time);
+  }
+
+  let v2Err = '';
+  try {
+    const r = await http('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': MAPS_KEY,
+        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.localizedValues,routes.legs.duration,routes.legs.localizedValues,routes.legs.steps.travelMode,routes.legs.steps.distanceMeters,routes.legs.steps.localizedValues,routes.legs.steps.navigationInstruction,routes.legs.steps.transitDetails'
+      },
+      body: JSON.stringify(body)
+    }, 15000, deadline);
+
+    const j = await r.json();
+    if (r.ok && j.routes && j.routes.length > 0) {
+      const top3 = j.routes.slice(0, 3).map((rt, idx) => formatRouteV2Speech(rt, idx, args.origin));
+      s.routeAlternatives = top3.map(x => x.fullText);
+      s.awaitingRouteChoice = true;
+      return {
+        total_alternatives: top3.length,
+        brief_summary: top3.map(x => x.summary),
+        instruction_to_model: `Present a very short 1-line summary of each of the ${top3.length} alternatives and ask the caller to press 1, 2, or 3 to hear the full step-by-step route.`
+      };
+    }
+    v2Err = (j.error && j.error.message) ? j.error.message : ('HTTP ' + r.status);
+    console.error('Routes API v2 response:', v2Err);
+  } catch (e) {
+    if (isBudget(e)) throw e;
+    v2Err = e.message;
+    console.error('Routes API v2 exception:', v2Err);
+  }
+
+  // גיבוי לממשק Legacy Directions אם מופעל בפרויקט
   const u = new URL('https://maps.googleapis.com/maps/api/directions/json');
   u.searchParams.set('origin', args.origin);
   u.searchParams.set('destination', args.destination);
@@ -265,37 +402,24 @@ async function runGoogleMapsRoute(args, s, deadline) {
   u.searchParams.set('alternatives', 'true');
   u.searchParams.set('language', 'he');
   u.searchParams.set('region', 'il');
-  u.searchParams.set('departure_time', args.departure_time || 'now');
+  u.searchParams.set('departure_time', 'now');
   u.searchParams.set('key', MAPS_KEY);
 
-  const r = await http(u.toString(), {}, 15000, deadline);
-  const j = await r.json();
-  if (j.status !== 'OK' || !j.routes || !j.routes.length) {
-    return { error: 'לא נמצא מסלול מתאים בגוגל מפות: ' + (j.status || 'UNKNOWN') };
+  const r2 = await http(u.toString(), {}, 15000, deadline);
+  const j2 = await r2.json();
+  if (j2.status === 'OK' && j2.routes && j2.routes.length > 0) {
+    const top3 = j2.routes.slice(0, 3).map((rt, idx) => formatRouteLegacySpeech(rt, idx));
+    s.routeAlternatives = top3.map(x => x.fullText);
+    s.awaitingRouteChoice = true;
+    return {
+      total_alternatives: top3.length,
+      brief_summary: top3.map(x => x.summary),
+      instruction_to_model: `Present a very short 1-line summary of each of the ${top3.length} alternatives and ask the caller to press 1, 2, or 3 to hear the full step-by-step route.`
+    };
   }
 
-  const top3 = j.routes.slice(0, 3);
-  s.routeAlternatives = top3.map((rt, idx) => formatRouteSpeech(rt, idx));
-  s.awaitingRouteChoice = true;
-
-  const briefList = top3.map((rt, idx) => {
-    const leg = rt.legs[0];
-    const transitLines = (leg.steps || [])
-      .filter(st => st.travel_mode === 'TRANSIT' && st.transit_details)
-      .map(st => st.transit_details.line.short_name || st.transit_details.line.name)
-      .join(' ואז קו ');
-    return {
-      option: idx + 1,
-      duration: leg.duration ? leg.duration.text : '',
-      lines: transitLines || 'הליכה / רכב',
-      arrival: leg.arrival_time ? leg.arrival_time.text : ''
-    };
-  });
-
   return {
-    total_alternatives: top3.length,
-    brief_summary: briefList,
-    instruction_to_model: `Present a very short 1-line summary of each of the ${top3.length} alternatives and ask the caller to press 1, 2, or 3 to hear the full step-by-step route.`
+    error: `שגיאה מגוגל מפות: ${v2Err || j2.status}. ודא שב-Google Cloud Console מופעל Routes API עבור מפתח ה-API.`
   };
 }
 
@@ -304,7 +428,7 @@ async function runGoogleMapsRoute(args, s, deadline) {
 // ============================================================================
 const PARALLEL_SEARCH_DECL = {
   name: 'web_search_parallel',
-  description: 'Execute 5 to 8 parallel web search queries simultaneously via Groq to gather complete, verified, multi-angle information.',
+  description: 'Execute 5 to 8 parallel web search queries simultaneously via Groq for general news, facts, and research (DO NOT use for transit/navigation routes).',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -390,7 +514,7 @@ async function prepareRssRadio(args, s, deadline) {
   }
   if (!feedUrl) throw new Error('לא הוגדרו תחנות רדיו ב-RADIO_FEEDS');
 
-  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.4' } }, 12000, deadline);
+  const r = await http(feedUrl, { headers: { 'User-Agent': 'KavAI-Radio/2.5' } }, 12000, deadline);
   if (!r.ok) throw new Error('שגיאה בטעינת פיד RSS: ' + r.status);
   const xmlText = await r.text();
   const parsed = xmlParser.parse(xmlText);
@@ -798,12 +922,43 @@ function del(name, d) {
   fetch(YM + 'FileAction?token=' + encodeURIComponent(TOKEN) + '&action=delete&what=' + encodeURIComponent(yp(name, d)), { signal: AbortSignal.timeout(8000) }).catch(() => {});
 }
 
+// --- מטמון הודעות מערכת בקול הנשי הצעיר והרענן (Kore) ---
+const sysReady = {};
+const sysInFlight = {};
+async function sysClip(s, text, timeoutMs) {
+  const cleanText = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!cleanText) return '';
+  const dir = (s && s.d) || ('/' + EXT);
+  const voice = (s && s.vc && VOICE_BY[s.vc]) || VOICE;
+  const hash = crypto.createHash('sha1').update(voice + '|' + cleanText).digest('hex').slice(0, 10);
+  const name = 'sp' + hash;
+  const key = dir + '/' + name;
+
+  if (sysReady[key]) return 'f-' + dir + '/' + name;
+
+  if (!sysInFlight[key]) {
+    sysInFlight[key] = (async () => {
+      const dl = Date.now() + (timeoutMs || 12000);
+      const pcm = await tts(cleanText, dl, { voice });
+      await upload(name, pcm, dl, dir, timeoutMs || 10000);
+      sysReady[key] = true;
+    })().catch(e => {
+      console.error('sysClip fallback:', e.message);
+    }).finally(() => {
+      delete sysInFlight[key];
+    });
+  }
+
+  await sysInFlight[key];
+  return sysReady[key] ? ('f-' + dir + '/' + name) : ('t-' + sp(cleanText));
+}
+
 // --- ניהול שיחות ותפריטים בימות המשיח ---
 let CFG = [];
 try { CFG = JSON.parse(process.env.EXTENSIONS || '[]'); } catch (e) { CFG = []; }
 if (!Array.isArray(CFG) || !CFG.length) CFG = [{ p: EXT, m: '2', x: '', g: process.env.GREETING || '' }];
 
-const DEFAULT_GREET = 'שלום וברכה, כאן הסוכן החכם';
+const DEFAULT_GREET = 'שלום וברכה, כאן הסוכן החכם.';
 const EXTS = {};
 for (const c of CFG) {
   const p = String(c.p || '').replace(/^\/+|\/+$/g, '');
@@ -811,12 +966,12 @@ for (const c of CFG) {
   EXTS[p.replace(/\//g, '_')] = {
     p, d: '/' + p,
     sys: buildSys(c.m, String(c.x || '').replace(/\s+/g, ' ').trim().slice(0, 1000)),
-    g: sp(String(c.g || '').slice(0, 300)) || sp(DEFAULT_GREET)
+    g: String(c.g || '').trim().slice(0, 300) || DEFAULT_GREET
   };
 }
-const EXT_FIRST = EXTS[Object.keys(EXTS)[0]] || { p: EXT, d: '/' + EXT, sys: buildSys('2', ''), g: sp(DEFAULT_GREET) };
-const AGAIN = sp('לא שמעתי שאל שוב');
-const ERR = sp('הייתה תקלה נסו שוב');
+const EXT_FIRST = EXTS[Object.keys(EXTS)[0]] || { p: EXT, d: '/' + EXT, sys: buildSys('2', ''), g: DEFAULT_GREET };
+const AGAIN = 'לא שמעתי, אנא שאל שוב';
+const ERR = 'הייתה תקלה, נסו שוב';
 
 const idOf = q => String(q.ApiCallId || 'x').replace(/[^a-zA-Z0-9]/g, '').slice(-24) || 'x';
 const phoneOf = q => { const p = String(q.ApiPhone || '').replace(/\D/g, ''); return p.length >= 7 && p.length <= 15 ? p : ''; };
@@ -835,17 +990,30 @@ const KB_KEYS = { '3': 'אבג', '2': 'דהו', '6': 'זחט', '5': 'יכךל', 
 const KB_FINAL = { 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' };
 const KB_WAIT = Math.min(60, Math.max(3, parseInt(process.env.KBD_WAIT, 10) || 20));
 const WAIT_SEC = Math.min(15, Math.max(2, parseInt(process.env.INPUT_WAIT_SEC, 10) || 7));
-const MENU_OPEN = sp('להקלטת בקשה הקש 1 להקלדה הקש 2');
-const MENU = sp('להקלטה הקש 1 להקלדה הקש 2');
-const KB_MORE = sp('לבקשה נוספת');
-const KB_START = sp('הקלד את הבקשה ובסיום הקש סולמית');
+const MENU_OPEN = 'להקלטת בקשה הקש 1, להקלדה הקש 2';
+const MENU = 'להקלטה הקש 1, להקלדה הקש 2';
+const KB_MORE = 'לבקשה נוספת, הקש 1 להקלטה או 2 להקלדה';
+const KB_START = 'הקלד את הבקשה ובסיום הקש סולמית';
 const kbFinal = t => t.replace(/(?<=[א-ת])[כמנפצ](?=\s|$)/g, c => KB_FINAL[c]);
 
-const askFor = (s, pre) => { s.n++; s.mode = 'rec'; s.p = 'Q' + s.e + s.n; s.name = 'q' + s.e + 'n' + s.n; return 'read=' + pre + '=' + s.p + ',no,record,' + s.d + ',' + s.name + ',no,,,1,' + REC_MAX; };
-const tapAny = (s, pre, menu) => { s.n++; s.mode = 'menu'; s.p = 'K' + s.e + s.n; return 'read=' + pre + '.t-' + (menu || MENU) + '=' + s.p + ',no,1,1,' + WAIT_SEC + TAP_EMPTY; };
+const askFor = async (s, preText) => {
+  s.n++; s.mode = 'rec'; s.p = 'Q' + s.e + s.n; s.name = 'q' + s.e + 'n' + s.n;
+  const clip = await sysClip(s, preText);
+  return 'read=' + clip + '=' + s.p + ',no,record,' + s.d + ',' + s.name + ',no,,,1,' + REC_MAX;
+};
+const tapAny = async (s, preText, menuText) => {
+  s.n++; s.mode = 'menu'; s.p = 'K' + s.e + s.n;
+  const fullPrompt = [preText, menuText || MENU].filter(Boolean).join('. ');
+  const clip = await sysClip(s, fullPrompt);
+  return 'read=' + clip + '=' + s.p + ',no,1,1,' + WAIT_SEC + TAP_EMPTY;
+};
 const ansFor = (s, pre) => { s.n++; s.mode = 'ans'; s.p = 'A' + s.e + s.n; return 'read=' + pre + '=' + s.p + ',no,1,1,1' + TAP_EMPTY; };
 const routeChoiceFor = (s, pre) => { s.n++; s.mode = 'route_choice'; s.p = 'R' + s.e + s.n; return 'read=' + pre + '=' + s.p + ',no,1,1,10' + TAP_EMPTY; };
-const kbAsk = (s, pre) => { s.n++; s.mode = 'type'; s.p = 'K' + s.e + s.n; return 'read=' + pre + '=' + s.p + ',no,*,1,' + KB_WAIT + TAP_EMPTY; };
+const kbAsk = async (s, preText) => {
+  s.n++; s.mode = 'type'; s.p = 'K' + s.e + s.n;
+  const clip = await sysClip(s, preText);
+  return 'read=' + clip + '=' + s.p + ',no,*,1,' + KB_WAIT + TAP_EMPTY;
+};
 
 function kbKey(s, raw) {
   const d = String(raw || '').replace(/#/g, '').trim();
@@ -861,35 +1029,36 @@ function kbKey(s, raw) {
 
 async function kbStep(s, q, id, T0) {
   const d = digitsOf(q[s.p]);
-  if (!d) return tapAny(s, 't-' + sp('לא הוקלד כלום'));
+  if (!d) return await tapAny(s, 'לא הוקלד כלום');
   s.buf = '';
   kbKey(s, d);
   const text = kbFinal(s.buf.replace(/\s+/g, ' ').trim().slice(0, 600));
   s.buf = '';
-  if (!text) return kbAsk(s, 't-' + sp('לא הוקלד טקסט נסו שוב'));
-  return runTurn(s, q, id, T0, text);
+  if (!text) return await kbAsk(s, 'לא הוקלד טקסט, נסו שוב');
+  return await runTurn(s, q, id, T0, text);
 }
 
-function runTurn(s, q, id, T0, typed) {
+async function runTurn(s, q, id, T0, typed) {
   const recVal = typed ? '' : digitsOf(q[s.p]);
-  if (!typed && !recVal) return tapAny(s, 't-' + AGAIN);
+  if (!typed && !recVal) return await tapAny(s, AGAIN);
   s.jobT0 = Date.now();
-  s.statusQueue = [sp('קיבלתי רגע אחד')];
+  s.statusQueue = ['קיבלתי, רגע אחד'];
   s.extraPlayChain = '';
   s.transferToExt = '';
   s.awaitingRouteChoice = false;
-  s.job = doTurn(s, q, id, s.jobT0, typed, recVal).catch(e => {
+  s.job = doTurn(s, q, id, s.jobT0, typed, recVal).catch(async e => {
     console.error(id, 'turn crashed', e && e.message);
-    return tapAny(s, 't-' + ERR);
+    return await tapAny(s, ERR);
   });
-  return holdStep(s);
+  return await holdStep(s);
 }
 
 async function holdStep(s) {
   if (s.statusQueue && s.statusQueue.length > 0) {
     const msg = s.statusQueue.shift();
     s.hn++;
-    return 'read=t-' + msg + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
+    const clip = await sysClip(s, msg, 5500);
+    return 'read=' + clip + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
   }
 
   const waitSig = new Promise(res => { s.onStatus = res; });
@@ -903,14 +1072,16 @@ async function holdStep(s) {
   if (s.statusQueue && s.statusQueue.length > 0) {
     const msg = s.statusQueue.shift();
     s.hn++;
-    return 'read=t-' + msg + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
+    const clip = await sysClip(s, msg, 5500);
+    return 'read=' + clip + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
   }
   if (Date.now() - s.jobT0 > BUDGET + 15000) {
     s.job = null;
-    return tapAny(s, 't-' + ERR);
+    return await tapAny(s, ERR);
   }
   s.hn++;
-  return 'read=t-' + sp('עוד רגע') + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
+  const waitClip = await sysClip(s, 'עוד רגע', 5500);
+  return 'read=' + waitClip + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
 }
 
 async function speakAndReturn(s, text, deadline, useRouteMenu) {
@@ -920,7 +1091,7 @@ async function speakAndReturn(s, text, deadline, useRouteMenu) {
   s.extraPlayChain = '';
   const builder = useRouteMenu ? routeChoiceFor : ansFor;
 
-  if (!pcm) return builder(s, 't-' + (sp(text) || ERR) + tail);
+  if (!pcm) return builder(s, 't-' + (sp(text) || sp(ERR)) + tail);
 
   const rn = 'r' + s.e + 'n' + s.n;
   await upload(rn, pcm, deadline, s.d, 30000);
@@ -955,7 +1126,8 @@ async function doTurn(s, q, id, T0, typed, recVal) {
     if (s.transferToExt) {
       const target = s.transferToExt;
       s.transferToExt = '';
-      return `id_list_message=t-${sp('מעביר אותך לשידור החי')}&go_to_folder=${target}`;
+      const trClip = await sysClip(s, 'מעביר אותך לשידור החי', 5500);
+      return `id_list_message=${trClip}&go_to_folder=${target}`;
     }
 
     const parts = (((a.candidates || [])[0] || {}).content || {}).parts || [];
@@ -980,12 +1152,12 @@ async function doTurn(s, q, id, T0, typed, recVal) {
   } catch (e) {
     console.error(id, 'turn failed:', e.message);
     if (!typed) del(qn, s.d);
-    return tapAny(s, 't-' + ERR);
+    return await tapAny(s, ERR);
   }
 }
 
 async function turnStep(s, q, id, T0) {
-  if (s.job) return holdStep(s);
+  if (s.job) return await holdStep(s);
 
   // טיפול בבחירת חלופת מסלול (הקש 1, 2 או 3)
   if (s.mode === 'route_choice') {
@@ -996,22 +1168,22 @@ async function turnStep(s, q, id, T0) {
       s.n++;
       return await speakAndReturn(s, chosenText, Date.now() + 45000, true);
     }
-    return tapAny(s, 't-' + KB_MORE);
+    return await tapAny(s, KB_MORE);
   }
 
   if (s.mode === 'ans') {
     const d = digitsOf(q[s.p]);
     if (d === '1' || d === '2') s.mode = 'menu';
-    else return tapAny(s, 't-' + KB_MORE);
+    else return await tapAny(s, KB_MORE);
   }
   if (s.mode === 'menu') {
     const d = digitsOf(q[s.p]);
-    if (d === '1') return askFor(s, 't-' + sp('דבר אחרי הצליל'));
-    if (d === '2') { s.buf = ''; return kbAsk(s, 't-' + KB_START); }
-    return tapAny(s, 't-' + sp('להקלטה הקש 1 להקלדה הקש 2'));
+    if (d === '1') return await askFor(s, 'דבר אחרי הצליל');
+    if (d === '2') { s.buf = ''; return await kbAsk(s, KB_START); }
+    return await tapAny(s, MENU);
   }
-  if (s.mode === 'type') return kbStep(s, q, id, T0);
-  return runTurn(s, q, id, T0);
+  if (s.mode === 'type') return await kbStep(s, q, id, T0);
+  return await runTurn(s, q, id, T0);
 }
 
 app.get('/', (q, r) => r.send('ok'));
@@ -1023,7 +1195,6 @@ app.all(['/yemot', '/yemot/:e'], async (req, res) => {
   const T0 = Date.now();
   const ext = EXTS[String(req.params.e || '')] || EXT_FIRST;
   const apiExt = normApiExt(q);
-  // שימוש אוטומטי בשלוחה האמיתית שמגיעה מימות המשיח (ApiExtension)
   const targetDir = req.params.e ? ext.d : (apiExt !== null ? apiExt : ext.d);
   try {
     if (q.hangup === 'yes') {
@@ -1034,17 +1205,44 @@ app.all(['/yemot', '/yemot/:e'], async (req, res) => {
     }
     const s = calls[id] || (calls[id] = newSession(targetDir, ext.sys, ext.g, { ph: phoneOf(q), apiExt }));
     s.t = Date.now();
-    if (!s.mode) return res.send(tapAny(s, 't-' + s.g, MENU_OPEN));
+    if (!s.mode) return res.send(await tapAny(s, s.g, MENU_OPEN));
     const out = await turnStep(s, q, id, T0);
     res.send(out);
   } catch (e) {
     console.error(id, 'fatal', e.message);
-    if (!res.headersSent) res.send('id_list_message=t-' + ERR);
+    if (!res.headersSent) res.send('id_list_message=t-' + sp(ERR));
   }
 });
 
 app.use((err, req, res, next) => {
-  if (!res.headersSent) res.type('text/plain').send('id_list_message=t-' + ERR);
+  if (!res.headersSent) res.type('text/plain').send('id_list_message=t-' + sp(ERR));
 });
 
-app.listen(process.env.PORT || 3000, () => console.log('kav-ai-agentic up'));
+// הכנה מראש ברקע של הודעות הפתיחה והתפריטים בקול הנשי הצעיר (Kore)
+async function warmSystemPrompts() {
+  if (!TTS_KEYS.length || !TOKEN) return;
+  const dirs = [...new Set([EXT_FIRST.d, ...Object.values(EXTS).map(e => e.d)])];
+  for (const d of dirs) {
+    const greet = (Object.values(EXTS).find(e => e.d === d) || EXT_FIRST).g;
+    const phrases = [
+      greet + '. ' + MENU_OPEN,
+      MENU,
+      'דבר אחרי הצליל',
+      'קיבלתי, רגע אחד',
+      'עוד רגע',
+      KB_START,
+      KB_MORE + '. ' + MENU,
+      AGAIN + '. ' + MENU,
+      ERR + '. ' + MENU
+    ];
+    for (const p of phrases) {
+      await sysClip({ d }, p, 20000);
+      await sleep(300);
+    }
+  }
+}
+
+app.listen(process.env.PORT || 3000, () => {
+  console.log('kav-ai-agentic up');
+  setTimeout(() => warmSystemPrompts().catch(() => {}), 1500);
+});
