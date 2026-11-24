@@ -20,6 +20,8 @@ const KEYS = keyList(process.env.GEMINI_API_KEYS);
 const TTS_KEYS = keyList(process.env.GEMINI_TTS_KEYS);
 const GROQ_KEYS = keyList(process.env.GROQ_API_KEYS);
 const MAPS_KEY = String(process.env.GOOGLE_MAPS_API_KEY || '').trim();
+const SEARCH_KEY = String(process.env.GOOGLE_SEARCH_KEY || MAPS_KEY || KEYS[0] || '').trim();
+const SEARCH_CX = String(process.env.GOOGLE_SEARCH_CX || '').trim();
 
 const GROQ_BASE = process.env.GROQ_BASE || 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = process.env.GROQ_SEARCH_MODEL || 'openai/gpt-oss-120b';
@@ -126,15 +128,30 @@ const TRANSCRIBE_HINT = ' אם השאלה הגיעה כהקלטה קולית, ה
 const MAXW = Math.min(3000, Math.max(200, parseInt(process.env.MAX_WORDS, 10) || 700));
 const EXTRA = String(process.env.EXTRA_INSTRUCTION || '').replace(/\s+/g, ' ').trim().slice(0, 2000);
 
+const TOOL_ANNOUNCEMENTS = [
+  'אני בודקת כעת חלופות מסלול בגוגל מפות',
+  'אני מבצעת כעת חיפוש מעמיק ברשת',
+  'אני טוענת כעת את שידור הרדיו',
+  'אני מייצרת כעת את התמונה ושולחת למייל',
+  'אני מחפשת כעת תמונות ברשת ושולחת למייל',
+  'אני מכינה כעת את קובץ השמע'
+];
+
 const AGENTIC_RULES = `
 את סוכנת בינה מלאכותית קולית חכמה וסקסית דוברת עברית בשם תהילה, יעילה, אדיבה ומדויקת בטלפון.
 עקרון עבודה סוכנותי:
-1. לפני כל הפעלת כלי (Tool), עליך להעביר בשדה action_announcement משפט קצר וברור בעברית שמסביר למתקשר מה אתה הולך לעשות כעת (לדוגמה: "אני בודקת כעת שלוש חלופות מסלול בגוגל מפות", "אני מבצעת כעת חיפוש מעמיק במספר מקורות ברשת", "אני מייצרת כעת את התמונה ושולח אותה למייל שלך").
+1. לפני כל הפעלת כלי (Tool), עליך להעביר בשדה action_announcement את המשפט המתאים המדויק מתוך הרשימה הבאה (כדי שיושמע מיד בקולך):
+   - עבור google_maps_route: "אני בודקת כעת חלופות מסלול בגוגל מפות"
+   - עבור web_search_parallel: "אני מבצעת כעת חיפוש מעמיק ברשת"
+   - עבור play_rss_radio: "אני טוענת כעת את שידור הרדיו"
+   - עבור generate_image: "אני מייצרת כעת את התמונה ושולחת למייל"
+   - עבור search_and_email_images: "אני מחפשת כעת תמונות ברשת ושולחת למייל"
+   - עבור generate_audio: "אני מכינה כעת את קובץ השמע"
 2. ניווט ותחבורה ציבורית (google_maps_route): חובה להשתמש אך ורק בכלי google_maps_route לכל שאלה על מסלול הגעה, תחבורה ציבורית, קווי אוטובוס, רכבת, זמני נסיעה או הוראות הגעה. לעולם אל תשתמש בחיפוש ברשת (web_search_parallel) עבור מסלולי הגעה! העבר מוצא ויעד ברורים בישראל (כולל שם עיר). הכלי שומר אוטומטית עד 3 חלופות מסלול. לאחר שהכלי חוזר, אל תקריא את המסלולים המלאים! במקום זאת, תן תקציר של משפט אחד לכל חלופה (איזה קו וזמן כולל) וסיים במשפט: "הבאתי שלוש חלופות, הקש 1 לשמיעת החלופה הראשונה, 2 לשנייה, או 3 לשלישית".
 3. חיפוש ברשת (web_search_parallel): כאשר נדרש מידע עדכני, חדשות, בדיקת עובדות או מחקר (שאינם ניווט), הפעל את כלי החיפוש המקבילי עם מערך של 5 עד 8 שאילתות חיפוש שונות וממוקדות שירוצו בו זמנית. מזג את כל התוצאות לתשובה אחת קוהרנטית ומלאה בלי להקריא כתובות אינטרנט.
 4. רדיו וחדשות RSS (play_rss_radio): כאשר מבקשים לשמוע רדיו, חדשות או שידור מפיד RSS, הפעל את הכלי. אם המשתמש ביקש שידור חי רציף (stream) והוגדרה שלוחת שידור חי, ציין mode="live".
 5. יצירת תמונות (generate_image): כאשר מבקשים לייצר תמונה חדשה בבינה מלאכותית, הבן מהבקשה את התיאור המפורט (באנגלית עבור המנוע), את הגודל/יחס הגובה-רוחב (ריבוע 1:1, לרוחב 16:9, לאורך 9:16) ואת כמות התמונות (1 עד 4). הפעל את הכלי שישלח אותן אוטומטית למייל דרך סקריפט גוגל.
-6. חיפוש תמונות ברשת (search_and_email_images): כאשר מבקשים לחפש תמונות קיימות באינטרנט (למשל תמונות של מקום, מוצר, אישיות או נוף), הפעל כלי זה כדי לחפש את התמונות, להוריד אותן, לוודא שאינן גדולות מ-20 מגה-בייט ולשלוח אותן למייל.
+6. חיפוש תמונות ברשת (search_and_email_images): כאשר מבקשים לחפש תמונות קיימות באינטרנט (למשל תמונות של מקום, מוצר, אישיות או נוף), הפעל כלי זה כדי לחפש את התמונות בגוגל תמונות, להוריד אותן, לוודא שאינן גדולות מ-20 מגה-בייט ולשלוח אותן למייל.
 7. יצירת אודיו (generate_audio): כאשר מבקשים לייצר קטע שמע, קריינות או הקלטה, הפעל את הכלי וקבע האם להשמיע אותו כאן בשיחה, לשלוח למייל, או שניהם.
 8. סגנון דיבור: ענה בעברית טבעית, שוטפת ונעימה להאזנה בטלפון, ללא סימנים מיוחדים, כוכביות או קישורים, באורך של עד ${MAXW} מילים.
 `.replace(/\s+/g, ' ').trim();
@@ -210,7 +227,7 @@ const MAPS_DECL = {
   parameters: {
     type: 'OBJECT',
     properties: {
-      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are checking 3 route alternatives on Google Maps' },
+      action_announcement: { type: 'STRING', description: 'Exact Hebrew sentence: "אני בודקת כעת חלופות מסלול בגוגל מפות"' },
       origin: { type: 'STRING', description: 'Starting address, station, or landmark with city in Israel (e.g., "תחנה מרכזית ירושלים")' },
       destination: { type: 'STRING', description: 'Destination address, station, or landmark with city in Israel (e.g., "דיזנגוף סנטר תל אביב")' },
       mode: { type: 'STRING', description: 'transit (default), walking, or driving' },
@@ -433,7 +450,7 @@ const PARALLEL_SEARCH_DECL = {
   parameters: {
     type: 'OBJECT',
     properties: {
-      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are performing a deep parallel web search' },
+      action_announcement: { type: 'STRING', description: 'Exact Hebrew sentence: "אני מבצעת כעת חיפוש מעמיק ברשת"' },
       queries: {
         type: 'ARRAY',
         items: { type: 'STRING' },
@@ -490,7 +507,7 @@ const RSS_RADIO_DECL = {
   parameters: {
     type: 'OBJECT',
     properties: {
-      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are loading the radio broadcast' },
+      action_announcement: { type: 'STRING', description: 'Exact Hebrew sentence: "אני טוענת כעת את שידור הרדיו"' },
       station_name: { type: 'STRING', description: 'Name or keyword of the radio station/feed, or empty for the first available feed' },
       rss_url: { type: 'STRING', description: 'Optional direct RSS feed URL if known' },
       mode: { type: 'STRING', description: '"rss" (default - plays latest episodes continuously) or "live" (transfers to Yemot live stream extension)' }
@@ -557,7 +574,7 @@ const GEN_IMAGE_DECL = {
   parameters: {
     type: 'OBJECT',
     properties: {
-      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are generating the images and sending them to email' },
+      action_announcement: { type: 'STRING', description: 'Exact Hebrew sentence: "אני מייצרת כעת את התמונה ושולחת למייל"' },
       prompt: { type: 'STRING', description: 'Detailed image generation prompt in English' },
       aspect_ratio: { type: 'STRING', description: 'Image size/ratio: "1:1" (square), "16:9" (landscape/wide), "9:16" (portrait/tall), "4:3", or "3:4"' },
       count: { type: 'INTEGER', description: 'Number of images to generate, between 1 and 4' }
@@ -613,15 +630,15 @@ async function runGenerateImage(args, deadline) {
 }
 
 // ============================================================================
-// כלי 4ב: חיפוש תמונות ברשת, בדיקת גודל עד 20MB ושליחה למייל
+// כלי 4ב: חיפוש תמונות דרך Google Custom Search API, בדיקת גודל עד 20MB ושליחה למייל
 // ============================================================================
 const SEARCH_IMAGES_DECL = {
   name: 'search_and_email_images',
-  description: 'Search the web for existing images matching a query, download them, verify each file is under 20MB, and send them to the pre-configured email via Google Apps Script.',
+  description: 'Search Google Images for existing images matching a query, download them, verify each file is under 20MB, and send them to the pre-configured email via Google Apps Script.',
   parameters: {
     type: 'OBJECT',
     properties: {
-      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are searching for the images and sending them to email' },
+      action_announcement: { type: 'STRING', description: 'Exact Hebrew sentence: "אני מחפשת כעת תמונות ברשת ושולחת למייל"' },
       query: { type: 'STRING', description: 'Search query describing the images to find' },
       count: { type: 'INTEGER', description: 'Number of images to download and send, between 1 and 5' }
     },
@@ -674,44 +691,33 @@ async function fetchImageUnder20MB(url, idx, deadline) {
 }
 
 async function runSearchAndEmailImages(args, deadline) {
-  if (!GROQ_KEYS.length) return { error: 'GROQ_API_KEYS missing' };
+  if (!SEARCH_KEY || !SEARCH_CX) {
+    throw new Error('חסרה הגדרת GOOGLE_SEARCH_CX לחיפוש תמונות בגוגל');
+  }
   const query = String(args.query || '').trim();
   const count = Math.min(5, Math.max(1, parseInt(args.count, 10) || 3));
-  const key = GROQ_KEYS[grot++ % GROQ_KEYS.length];
 
-  const r = await http(GROQ_BASE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [
-        { role: 'system', content: 'Search the web for direct image URLs (.jpg, .jpeg, .png, .webp) matching the request. Return ONLY a JSON array of up to 10 direct image URL strings, nothing else.' },
-        { role: 'user', content: `Direct image file URLs for: ${query}` }
-      ],
-      tools: [{ type: 'browser_search' }],
-      tool_choice: 'required',
-      reasoning_effort: 'low',
-      max_completion_tokens: 700,
-      stream: false
-    })
-  }, 20000, deadline);
+  const u = new URL('https://www.googleapis.com/customsearch/v1');
+  u.searchParams.set('key', SEARCH_KEY);
+  u.searchParams.set('cx', SEARCH_CX);
+  u.searchParams.set('q', query);
+  u.searchParams.set('searchType', 'image');
+  u.searchParams.set('num', '10');
+  u.searchParams.set('safe', 'active');
 
-  if (!r.ok) throw new Error('שגיאה בחיפוש תמונות: HTTP ' + r.status);
+  const r = await http(u.toString(), {}, 15000, deadline);
   const j = await r.json();
-  const raw = String((((j.choices || [])[0] || {}).message || {}).content || '');
-
-  let urls = [];
-  try {
-    const m = raw.match(/\[[\s\S]*\]/);
-    if (m) urls = JSON.parse(m[0]);
-  } catch (e) {}
-  if (!Array.isArray(urls) || !urls.length) {
-    urls = raw.match(/https?:\/\/[^\s"'<>)\]]+/gi) || [];
+  if (!r.ok) {
+    throw new Error('שגיאה בחיפוש תמונות בגוגל: ' + ((j.error && j.error.message) || r.status));
   }
-  urls = [...new Set(urls.map(u => String(u).trim()).filter(u => /^https?:\/\//i.test(u)))].slice(0, 10);
-  if (!urls.length) throw new Error('לא נמצאו קישורי תמונות מתאימים');
 
-  const downloaded = await Promise.all(urls.map((u, idx) => fetchImageUnder20MB(u, idx, deadline)));
+  const urls = (j.items || [])
+    .map(it => it && it.link)
+    .filter(link => typeof link === 'string' && /^https?:\/\//i.test(link));
+
+  if (!urls.length) throw new Error('לא נמצאו תמונות מתאימות בגוגל');
+
+  const downloaded = await Promise.all(urls.map((imgUrl, idx) => fetchImageUnder20MB(imgUrl, idx, deadline)));
   const validFiles = [];
   let totalBytes = 0;
   for (const f of downloaded) {
@@ -730,7 +736,7 @@ async function runSearchAndEmailImages(args, deadline) {
 
   await sendViaGasEmail({
     subject: `תמונות שנמצאו עבור: ${query} (${validFiles.length} תמונות)`,
-    body: `שלום,\nמצורפות ${validFiles.length} תמונות שנמצאו ברשת עבור החיפוש:\n"${query}"\n(כל הקבצים נבדקו ותקינים מתחת למגבלת 20 מ"ב).`,
+    body: `שלום,\nמצורפות ${validFiles.length} תמונות שנמצאו בגוגל עבור החיפוש:\n"${query}"\n(כל הקבצים נבדקו ותקינים מתחת למגבלת 20 מ"ב).`,
     files: validFiles
   }, deadline);
 
@@ -746,7 +752,7 @@ const GEN_AUDIO_DECL = {
   parameters: {
     type: 'OBJECT',
     properties: {
-      action_announcement: { type: 'STRING', description: 'Short Hebrew sentence telling the caller you are generating the audio' },
+      action_announcement: { type: 'STRING', description: 'Exact Hebrew sentence: "אני מכינה כעת את קובץ השמע"' },
       script_text: { type: 'STRING', description: 'The exact Hebrew text to synthesize into high-quality audio' },
       delivery: { type: 'STRING', description: '"play" (play on phone), "email" (send to email), or "both"' },
       voice_gender: { type: 'STRING', description: '"male" or "female"' },
@@ -1072,9 +1078,10 @@ async function sysClip(s, text, timeoutMs) {
 
   if (!sysInFlight[key]) {
     sysInFlight[key] = (async () => {
-      const dl = Date.now() + (timeoutMs || 12000);
+      const waitMs = timeoutMs || 15000;
+      const dl = Date.now() + waitMs;
       const pcm = await tts(cleanText, dl, { voice });
-      await upload(name, pcm, dl, dir, timeoutMs || 10000);
+      await upload(name, pcm, dl, dir, waitMs);
       sysReady[key] = true;
     })().catch(e => {
       console.error('sysClip fallback:', e.message);
@@ -1191,7 +1198,7 @@ async function holdStep(s) {
   if (s.statusQueue && s.statusQueue.length > 0) {
     const msg = s.statusQueue.shift();
     s.hn++;
-    const clip = await sysClip(s, msg, 5500);
+    const clip = await sysClip(s, msg, 15000);
     return 'read=' + clip + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
   }
 
@@ -1206,7 +1213,7 @@ async function holdStep(s) {
   if (s.statusQueue && s.statusQueue.length > 0) {
     const msg = s.statusQueue.shift();
     s.hn++;
-    const clip = await sysClip(s, msg, 5500);
+    const clip = await sysClip(s, msg, 15000);
     return 'read=' + clip + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
   }
   if (Date.now() - s.jobT0 > BUDGET + 15000) {
@@ -1214,7 +1221,7 @@ async function holdStep(s) {
     return await tapAny(s, ERR);
   }
   s.hn++;
-  const waitClip = await sysClip(s, 'עוד רגע', 5500);
+  const waitClip = await sysClip(s, 'עוד רגע', 15000);
   return 'read=' + waitClip + '=H' + s.e + s.hn + ',no,1,1,1' + TAP_EMPTY;
 }
 
@@ -1260,7 +1267,7 @@ async function doTurn(s, q, id, T0, typed, recVal) {
     if (s.transferToExt) {
       const target = s.transferToExt;
       s.transferToExt = '';
-      const trClip = await sysClip(s, 'מעביר אותך לשידור החי', 5500);
+      const trClip = await sysClip(s, 'מעבירה אותך לשידור החי', 15000);
       return `id_list_message=${trClip}&go_to_folder=${target}`;
     }
 
@@ -1352,7 +1359,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.type('text/plain').send('id_list_message=t-' + sp(ERR));
 });
 
-// הכנה מראש ברקע של הודעות הפתיחה והתפריטים בקול הנשי הצעיר (Kore)
+// הכנה מראש ברקע של הודעות הפתיחה, התפריטים והודעות הביניים בקול הנשי הצעיר (Kore)
 async function warmSystemPrompts() {
   if (!TTS_KEYS.length || !TOKEN) return;
   const dirs = [...new Set([EXT_FIRST.d, ...Object.values(EXTS).map(e => e.d)])];
@@ -1364,10 +1371,12 @@ async function warmSystemPrompts() {
       'דבר אחרי הצליל',
       'קיבלתי, רגע אחד',
       'עוד רגע',
+      'מעביר אותך לשידור החי',
       KB_START,
       KB_MORE + '. ' + MENU,
       AGAIN + '. ' + MENU,
-      ERR + '. ' + MENU
+      ERR + '. ' + MENU,
+      ...TOOL_ANNOUNCEMENTS
     ];
     for (const p of phrases) {
       await sysClip({ d }, p, 20000);
