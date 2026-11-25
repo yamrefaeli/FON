@@ -1,6 +1,6 @@
 {
   "name": "kav-ai-agentic",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -13,5 +13,5 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "Kav AI Agentic: Hebrew Voice AI Agent for Yemot HaMashiach"
+  "description": "Kav AI Agentic v3: Multi-Step Hebrew Voice AI Agent for Yemot HaMashiach"
 }
