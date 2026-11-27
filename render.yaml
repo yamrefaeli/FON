@@ -17,13 +17,29 @@ services:
       - key: IMAGE_MODEL
         value: "gemini-3.1-flash-lite-image"
       - key: TTS_MODEL
-        value: "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts"
+        value: "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts"
+      - key: GROQ_REASONING_MODELS
+        value: "qwen/qwen3.8-27b,openai/gpt-oss-120b"
+      - key: GROQ_STAGGER_MS
+        value: "40"
+      - key: REC_MAX
+        value: "300"
+      - key: KBD_WAIT
+        value: "45"
+      - key: TURN_BUDGET_MS
+        value: "150000"
       - key: MAX_WORDS
-        value: "1200"
+        value: "2500"
       - key: EXT_PATH
         value: "1"
+      - key: CHAT_EXT
+        value: "5"
+      - key: BOOKMARKS_EXT
+        value: "6"
       - key: LIVE_STREAM_EXT
         value: "7"
+      - key: MEDIA_PLAYER_EXT
+        value: "8"
       - key: HISTORY_EXT
         value: "9"
       - key: GEMINI_API_KEYS
@@ -34,6 +50,10 @@ services:
         sync: false
       - key: GOOGLE_MAPS_API_KEY
         sync: false
+      - key: GOOGLE_SEARCH_CX
+        sync: false
+      - key: GOOGLE_SEARCH_KEY
+        sync: false
       - key: YEMOT_TOKEN
         sync: false
       - key: TARGET_EMAIL
@@ -43,8 +63,4 @@ services:
       - key: GAS_MAIL_SECRET
         sync: false
       - key: RADIO_FEEDS
-        sync: false
-      - key: GOOGLE_SEARCH_CX
-        sync: false
-      - key: GOOGLE_SEARCH_KEY
         sync: false
